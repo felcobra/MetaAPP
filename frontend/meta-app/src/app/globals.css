@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+:root {
+  --background: #eef1f8;
+  --foreground: #0f172a;
+
+  /* Deep navy scale — login panel, dark cards (TV Meta, funil comercial) */
+  --color-navy-950: #0a0e1c;
+  --color-navy-900: #0d1326;
+  --color-navy-800: #131b33;
+  --color-navy-700: #1b2544;
+  --color-navy-600: #29365c;
+
+  /* Brand blue -> cyan gradient family used across CTAs, progress, accents */
+  --color-brand-50: #eff8ff;
+  --color-brand-100: #dcefff;
+  --color-brand-400: #38bdf8;
+  --color-brand-500: #2196f3;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+
+  --color-surface: #eef1f8;
+  --color-surface-muted: #e4e8f4;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  --color-navy-950: var(--color-navy-950);
+  --color-navy-900: var(--color-navy-900);
+  --color-navy-800: var(--color-navy-800);
+  --color-navy-700: var(--color-navy-700);
+  --color-navy-600: var(--color-navy-600);
+
+  --color-brand-50: var(--color-brand-50);
+  --color-brand-100: var(--color-brand-100);
+  --color-brand-400: var(--color-brand-400);
+  --color-brand-500: var(--color-brand-500);
+  --color-brand-600: var(--color-brand-600);
+  --color-brand-700: var(--color-brand-700);
+
+  --color-surface: var(--color-surface);
+  --color-surface-muted: var(--color-surface-muted);
+}
+
+body {
+  background: var(--color-surface);
+  color: var(--foreground);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+.brand-gradient {
+  background-image: linear-gradient(90deg, var(--color-brand-400), var(--color-brand-600));
+}
+
+.brand-gradient-diagonal {
+  background-image: linear-gradient(135deg, var(--color-brand-400), var(--color-brand-600));
+}
