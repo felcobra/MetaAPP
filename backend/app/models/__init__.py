@@ -51,4 +51,18 @@ from app.models.hr import (  # noqa: F401
     MembroCelula,
     MembroCoordenacao,
     MembroProjeto,
+    OrgDivisao,
+    OrgNo,
+)
+
+# Módulo de Portfólio (Serviços por Coordenação)
+from app.models.service import Servico  # noqa: F401
+
+# Módulo de Formulários Dinâmicos (PAPE, Avaliação 360, etc.)
+from app.models.forms import (  # noqa: F401
+    FormTemplate,
+    FormStep,
+    FormField,
+    FormSubmission,
+    FormAnswer,
 )

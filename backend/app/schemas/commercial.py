@@ -60,6 +60,7 @@ class OportunidadeBase(BaseModel):
     status: Literal["ativo", "fechado", "desistido", "postergado"] = "ativo"
     fase_atual: str | None = None
     origem_id: int | None = None
+    coordenacao_id: int | None = None
     motivo_perda_id: int | None = None
     external_source: str | None = None
     external_id: str | None = None
@@ -74,6 +75,7 @@ class OportunidadeUpdate(BaseModel):
     status: Literal["ativo", "fechado", "desistido", "postergado"] | None = None
     fase_atual: str | None = None
     origem_id: int | None = None
+    coordenacao_id: int | None = None
     motivo_perda_id: int | None = None
 
 
@@ -82,6 +84,16 @@ class OportunidadeRead(OportunidadeBase):
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
+
+
+class PaginatedOportunidades(BaseModel):
+    """Response paginado para a tabela de oportunidades do frontend."""
+    items: list[OportunidadeRead]
+    total: int
+    total_pages: int
+    current_page: int
+    page_from: int
+    page_to: int
 
 
 # ---------- Phase History ----------

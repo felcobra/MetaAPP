@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
-    String, Text, DateTime, ForeignKey, Integer, JSON,
+    String, Text, DateTime, ForeignKey, Integer, JSON, Numeric,
     CheckConstraint, UniqueConstraint, Boolean,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -35,6 +35,11 @@ class ProjetoExterno(Base):
     nome: Mapped[str] = mapped_column(String(255), nullable=False)
     descricao: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Campos para a tela de listagem do frontend (evitam joins caros)
+    codigo: Mapped[str | None] = mapped_column(String(10), nullable=True)         # ex: "SI", "VI"
+    cliente_nome: Mapped[str | None] = mapped_column(String(255), nullable=True)  # nome desnormalizado
+    area: Mapped[str | None] = mapped_column(String(100), nullable=True)          # ex: "Operações"
+    progresso: Mapped[int | None] = mapped_column(Integer, nullable=True)         # 0-100
     data_inicio: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     data_fim: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     external_source: Mapped[str | None] = mapped_column(String(50), nullable=True)

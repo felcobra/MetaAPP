@@ -13,6 +13,7 @@ from app.schemas.commercial import (
     DimBaseRead, DimCreate,
     LeadRead, LeadCreate, LeadUpdate,
     OportunidadeRead, OportunidadeCreate, OportunidadeUpdate,
+    PaginatedOportunidades,
     PhaseHistoryRead, PhaseHistoryCreate,
 )
 
@@ -97,20 +98,38 @@ async def update_lead(
 
 # ========== Oportunidades ==========
 
-@router.get("/oportunidades", response_model=List[OportunidadeRead])
+@router.get("/oportunidades", response_model=PaginatedOportunidades)
 async def list_oportunidades(
     status: str | None = None,
     lead_id: int | None = None,
-    skip: int = 0, limit: int = 100,
+    page: int = 1,
+    page_size: int = 200,
     db: AsyncSession = Depends(get_db), _=Depends(get_current_user),
 ):
+    from sqlalchemy import func
     query = select(Oportunidade)
     if status:
         query = query.where(Oportunidade.status == status)
     if lead_id:
         query = query.where(Oportunidade.lead_id == lead_id)
-    r = await db.execute(query.offset(skip).limit(limit))
-    return r.scalars().all()
+
+    # Contagem total
+    count_q = select(func.count()).select_from(query.subquery())
+    total = (await db.execute(count_q)).scalar() or 0
+    total_pages = max(1, -(-total // page_size))  # ceil division
+    skip = (page - 1) * page_size
+
+    r = await db.execute(query.offset(skip).limit(page_size))
+    items = r.scalars().all()
+
+    return {
+        "items": items,
+        "total": total,
+        "total_pages": total_pages,
+        "current_page": page,
+        "page_from": skip + 1 if total else 0,
+        "page_to": min(skip + page_size, total),
+    }
 
 
 @router.get("/oportunidades/{op_id}", response_model=OportunidadeRead)

@@ -8,6 +8,8 @@ from app.api.v1.endpoints import (
     project_tracking,
     hr,
     dashboard,
+    forms,
+    portfolio,
 )
 
 api_router = APIRouter()
@@ -19,3 +21,5 @@ api_router.include_router(financial.router,       prefix="/financeiro",      tag
 api_router.include_router(project_tracking.router,prefix="/projetos",        tags=["Acompanhamento de Projetos"])
 api_router.include_router(hr.router,              prefix="/rh",              tags=["RH / Gestão Interna"])
 api_router.include_router(dashboard.router,       prefix="/dashboard",       tags=["Dashboard"])
+api_router.include_router(forms.router,           prefix="/formularios",     tags=["Formulários Dinâmicos"])
+api_router.include_router(portfolio.router,       prefix="/portfolio",       tags=["Portfólio de Serviços"])

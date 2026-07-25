@@ -8,10 +8,10 @@ Arquitetura:
 - Tabelas associativas N:N possuem UNIQUE KEY composta para evitar duplicidade
 - membro_projeto referencia projeto_externo (módulo de acompanhamento)
 """
-from datetime import datetime
+from datetime import datetime, date
 
 from sqlalchemy import (
-    String, Text, DateTime, ForeignKey,
+    String, Text, DateTime, ForeignKey, Integer,
     UniqueConstraint, Boolean,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -68,6 +68,12 @@ class Membro(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     nome: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    # Campos de perfil estendido (usados no OrgChart, Profile e widget de Home)
+    telefone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    data_entrada: Mapped[date | None] = mapped_column(DateTime, nullable=True)  # data de ingresso na empresa
+    data_nascimento: Mapped[date | None] = mapped_column(DateTime, nullable=True)  # widget de aniversários
+    foto_url: Mapped[str | None] = mapped_column(String(500), nullable=True)     # OrgChart photoUrl
+    destaque_texto: Mapped[str | None] = mapped_column(Text, nullable=True)      # widget de Recognitions
     # Vínculo opcional com o usuário de autenticação
     user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -172,3 +178,54 @@ class MembroProjeto(Base):
     # Relationships
     membro = relationship("Membro", back_populates="projetos")
     projeto_externo = relationship("ProjetoExterno")
+
+
+class OrgDivisao(Base):
+    """Divisão do organograma (ex: Presidência, Diretoria de Projetos).
+    Cada divisão tem sua própria árvore hierárquica de nós.
+    """
+    __tablename__ = "org_divisao"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    nome: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    slug: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)  # ex: "presidencia"
+    ordem: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Relationships
+    nos = relationship("OrgNo", back_populates="divisao",
+                       primaryjoin="OrgNo.divisao_id == OrgDivisao.id")
+
+
+class OrgNo(Base):
+    """Nó da árvore hierárquica do organograma.
+    Self-referencing via parent_id. A raiz de cada divisão tem parent_id=None.
+    membro_id opcional: nós sem pessoa representam posições/cargos vazios.
+    """
+    __tablename__ = "org_no"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    divisao_id: Mapped[int] = mapped_column(
+        ForeignKey("org_divisao.id", ondelete="CASCADE"), nullable=False
+    )
+    parent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("org_no.id", ondelete="CASCADE"), nullable=True
+    )
+    membro_id: Mapped[int | None] = mapped_column(
+        ForeignKey("membro.id", ondelete="SET NULL"), nullable=True
+    )
+    titulo: Mapped[str] = mapped_column(String(200), nullable=False)    # ex: "Diretor(a) Presidente"
+    ordem: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Relationships
+    divisao = relationship("OrgDivisao", back_populates="nos")
+    membro = relationship("Membro")
+    filhos = relationship(
+        "OrgNo",
+        back_populates="pai",
+        foreign_keys="OrgNo.parent_id",
+        cascade="all, delete-orphan",
+        order_by="OrgNo.ordem",
+    )
+    pai = relationship("OrgNo", back_populates="filhos", foreign_keys=[parent_id], remote_side=[id])

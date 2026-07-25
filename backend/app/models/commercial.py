@@ -87,6 +87,9 @@ class Oportunidade(Base):
     origem_id: Mapped[int | None] = mapped_column(
         ForeignKey("dim_lead_origem.id", ondelete="RESTRICT"), nullable=True
     )
+    coordenacao_id: Mapped[int | None] = mapped_column(
+        ForeignKey("coordenacao.id", ondelete="SET NULL"), nullable=True
+    )
     motivo_perda_id: Mapped[int | None] = mapped_column(
         ForeignKey("dim_motivo_perda.id", ondelete="RESTRICT"), nullable=True
     )
@@ -100,6 +103,7 @@ class Oportunidade(Base):
     # Relationships
     lead = relationship("Lead", back_populates="oportunidades")
     origem = relationship("DimLeadOrigem")
+    coordenacao = relationship("Coordenacao")
     motivo_perda = relationship("DimMotivoPerdida")
     phase_history = relationship(
         "OportunidadePhaseHistory", back_populates="oportunidade",

@@ -18,6 +18,21 @@ async def get_me(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+@router.get("/me/profile", summary="Perfil do usuário logado (SessionUser para o frontend)")
+async def get_me_profile(current_user: User = Depends(get_current_user)):
+    """Retorna o perfil resumido usado pelo TopBar e Sidebar do frontend.
+    Inclui: nome, role, email e iniciais calculadas.
+    """
+    name = current_user.full_name
+    initials = "".join(p[0].upper() for p in name.split()[:2]) if name else "??"
+    return {
+        "name": name,
+        "role": current_user.role,
+        "email": current_user.email,
+        "initials": initials,
+    }
+
+
 @router.get("/", response_model=List[UserRead], dependencies=[Depends(require_admin)])
 async def list_users(
     skip: int = 0,

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 from typing import List
 
 from app.core.database import get_db
@@ -10,6 +11,7 @@ from app.api.deps import get_current_user
 from app.models.hr import (
     Celula, Coordenacao, Cargo, Membro,
     MembroCargo, MembroCelula, MembroCoordenacao, MembroProjeto,
+    OrgDivisao, OrgNo,
 )
 from app.schemas.hr import (
     OrgCreate, OrgRead,
@@ -18,6 +20,7 @@ from app.schemas.hr import (
     MembroCelulaCreate, MembroCelulaRead,
     MembroCoordenacaoCreate, MembroCoordenacaoRead,
     MembroProjetoCreate, MembroProjetoRead,
+    OrgNoCreate, OrgDivisaoCreate, OrgDivisaoRead, OrgNoRead,
 )
 
 router = APIRouter()
@@ -179,3 +182,97 @@ async def alocar_projeto(body: MembroProjetoCreate, db: AsyncSession = Depends(g
 async def get_projetos_membro(membro_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
     r = await db.execute(select(MembroProjeto).where(MembroProjeto.membro_id == membro_id))
     return r.scalars().all()
+
+
+# ========== OrgChart hierárquico ==========
+
+def _build_tree(no: OrgNo) -> dict:
+    """Converte um OrgNo SQLAlchemy em dict recursivo para o schema OrgNoRead."""
+    membro_data = None
+    if no.membro:
+        m = no.membro
+        membro_data = {
+            "id": m.id,
+            "nome": m.nome,
+            "email": m.email,
+            "telefone": m.telefone,
+            "foto_url": m.foto_url,
+        }
+    return {
+        "id": no.id,
+        "titulo": no.titulo,
+        "membro": membro_data,
+        "filhos": [_build_tree(filho) for filho in (no.filhos or [])],
+    }
+
+
+@router.get("/orgchart", summary="Árvore hierárquica do organograma (todas as divisões)")
+async def get_orgchart(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Retorna a árvore hierárquica completa do organograma no formato OrgDivision[]
+    que o frontend consome. Carrega divisões ordenadas com nós raiz eager-loaded.
+    """
+    r = await db.execute(
+        select(OrgDivisao)
+        .options(
+            selectinload(OrgDivisao.nos)
+            .selectinload(OrgNo.filhos)
+            .selectinload(OrgNo.filhos)
+            .selectinload(OrgNo.filhos)  # 3 níveis de profundidade
+        )
+        .order_by(OrgDivisao.ordem)
+    )
+    divisoes = r.scalars().all()
+
+    result = []
+    for div in divisoes:
+        # Encontra o nó raiz (parent_id = None)
+        nos_raiz = [n for n in div.nos if n.parent_id is None]
+        root_data = _build_tree(nos_raiz[0]) if nos_raiz else None
+        result.append({
+            "id": div.slug,
+            "label": div.nome,
+            "root": root_data,
+        })
+    return result
+
+
+@router.post("/orgchart/divisoes", response_model=dict, status_code=201, summary="Criar divisão do organograma")
+async def create_divisao(
+    body: OrgDivisaoCreate,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    obj = OrgDivisao(**body.model_dump())
+    db.add(obj)
+    await db.flush()
+    await db.refresh(obj)
+    return {"id": obj.id, "nome": obj.nome, "slug": obj.slug}
+
+
+@router.post("/orgchart/nos", response_model=dict, status_code=201, summary="Criar/mover nó no organograma")
+async def create_no(
+    body: OrgNoCreate,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    obj = OrgNo(**body.model_dump())
+    db.add(obj)
+    await db.flush()
+    await db.refresh(obj)
+    return {"id": obj.id, "titulo": obj.titulo, "divisao_id": obj.divisao_id}
+
+
+@router.delete("/orgchart/nos/{no_id}", status_code=204, summary="Remover nó (cascade nos filhos)")
+async def delete_no(
+    no_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    r = await db.execute(select(OrgNo).where(OrgNo.id == no_id))
+    obj = r.scalar_one_or_none()
+    if not obj:
+        raise HTTPException(404, "Nó não encontrado")
+    await db.delete(obj)

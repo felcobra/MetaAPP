@@ -9,6 +9,10 @@ class ProjetoExternoBase(BaseModel):
     nome: str
     descricao: str | None = None
     status: str | None = None
+    codigo: str | None = None
+    cliente_nome: str | None = None
+    area: str | None = None
+    progresso: int | None = None
     data_inicio: datetime | None = None
     data_fim: datetime | None = None
     external_source: str | None = None
@@ -23,6 +27,10 @@ class ProjetoExternoUpdate(BaseModel):
     nome: str | None = None
     descricao: str | None = None
     status: str | None = None
+    codigo: str | None = None
+    cliente_nome: str | None = None
+    area: str | None = None
+    progresso: int | None = None
     data_inicio: datetime | None = None
     data_fim: datetime | None = None
 

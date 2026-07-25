@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from pydantic import BaseModel, EmailStr
 
 
@@ -22,6 +22,11 @@ class OrgRead(BaseModel):
 class MembroBase(BaseModel):
     nome: str
     email: EmailStr
+    telefone: str | None = None
+    data_entrada: date | None = None
+    data_nascimento: date | None = None
+    foto_url: str | None = None
+    destaque_texto: str | None = None
     user_id: int | None = None
 
 
@@ -32,6 +37,11 @@ class MembroCreate(MembroBase):
 class MembroUpdate(BaseModel):
     nome: str | None = None
     email: EmailStr | None = None
+    telefone: str | None = None
+    data_entrada: date | None = None
+    data_nascimento: date | None = None
+    foto_url: str | None = None
+    destaque_texto: str | None = None
     user_id: int | None = None
 
 
@@ -120,3 +130,49 @@ class MembroProjetoRead(BaseModel):
     ativo: bool
     created_at: datetime
     model_config = {"from_attributes": True}
+
+
+# ---------- OrgChart hierárquico ----------
+
+class MembroSummary(BaseModel):
+    """Resumo de membro para exibição no OrgChart."""
+    id: int
+    nome: str
+    email: str
+    telefone: str | None
+    foto_url: str | None
+    model_config = {"from_attributes": True}
+
+
+class OrgNoRead(BaseModel):
+    """Nó do organograma — com filhos recursivos."""
+    id: int
+    titulo: str
+    membro: MembroSummary | None
+    filhos: list["OrgNoRead"] = []
+    model_config = {"from_attributes": True}
+
+
+OrgNoRead.model_rebuild()  # necessário para recursão Pydantic v2
+
+
+class OrgDivisaoRead(BaseModel):
+    """Divisão do organograma com árvore completa."""
+    id: str
+    label: str
+    root: OrgNoRead | None = None
+    model_config = {"from_attributes": True}
+
+
+class OrgNoCreate(BaseModel):
+    divisao_id: int
+    parent_id: int | None = None
+    membro_id: int | None = None
+    titulo: str
+    ordem: int = 0
+
+
+class OrgDivisaoCreate(BaseModel):
+    nome: str
+    slug: str
+    ordem: int = 0
