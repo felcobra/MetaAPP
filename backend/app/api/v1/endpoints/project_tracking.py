@@ -1,8 +1,17 @@
-"""Endpoints de Acompanhamento de Projetos — Health Check."""
-from fastapi import APIRouter, Depends, HTTPException, status
+"""Endpoints de Acompanhamento de Projetos — Health Check.
+
+v2 — Correções:
+- Paths corrigidos: removido duplicação /projetos/projetos
+  (antes: prefix=/projetos + endpoint=/projetos → /projetos/projetos)
+  (agora: prefix=/projetos + endpoint=/ → /projetos/)
+- Filtro por status adicionado ao list_projetos
+- Logging em operações destrutivas
+"""
+import logging
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import List
+from typing import List, Optional
 
 from app.core.database import get_db
 from app.api.deps import get_current_user
@@ -18,17 +27,31 @@ from app.schemas.project_tracking import (
     SprintRead, SprintCreate, SprintUpdate,
 )
 
+logger = logging.getLogger("metaapp")
 router = APIRouter()
 
 # ========== Projeto Externo ==========
+# NOTA: prefix do router é /projetos, então os paths abaixo são relativos a ele.
+# Ex: GET / → GET /api/v1/projetos/
+#     GET /{id} → GET /api/v1/projetos/{id}
 
-@router.get("/projetos", response_model=List[ProjetoExternoRead])
-async def list_projetos(skip: int = 0, limit: int = 50, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
-    r = await db.execute(select(ProjetoExterno).offset(skip).limit(limit))
+@router.get("/", response_model=List[ProjetoExternoRead], summary="Listar projetos")
+async def list_projetos(
+    status_filtro: Optional[str] = Query(None, alias="status", description="Filtrar por status do projeto"),
+    skip: int = 0,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Lista projetos externos com filtro opcional por status."""
+    q = select(ProjetoExterno)
+    if status_filtro:
+        q = q.where(ProjetoExterno.status == status_filtro)
+    r = await db.execute(q.order_by(ProjetoExterno.created_at.desc()).offset(skip).limit(limit))
     return r.scalars().all()
 
 
-@router.get("/projetos/{projeto_id}", response_model=ProjetoExternoRead)
+@router.get("/{projeto_id}", response_model=ProjetoExternoRead)
 async def get_projeto(projeto_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
     r = await db.execute(select(ProjetoExterno).where(ProjetoExterno.id == projeto_id))
     obj = r.scalar_one_or_none()
@@ -37,7 +60,7 @@ async def get_projeto(projeto_id: int, db: AsyncSession = Depends(get_db), _=Dep
     return obj
 
 
-@router.post("/projetos", response_model=ProjetoExternoRead, status_code=201)
+@router.post("/", response_model=ProjetoExternoRead, status_code=201)
 async def create_projeto(body: ProjetoExternoCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
     obj = ProjetoExterno(**body.model_dump())
     db.add(obj)
@@ -46,7 +69,7 @@ async def create_projeto(body: ProjetoExternoCreate, db: AsyncSession = Depends(
     return obj
 
 
-@router.patch("/projetos/{projeto_id}", response_model=ProjetoExternoRead)
+@router.patch("/{projeto_id}", response_model=ProjetoExternoRead)
 async def update_projeto(projeto_id: int, body: ProjetoExternoUpdate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
     r = await db.execute(select(ProjetoExterno).where(ProjetoExterno.id == projeto_id))
     obj = r.scalar_one_or_none()
@@ -61,11 +84,13 @@ async def update_projeto(projeto_id: int, body: ProjetoExternoUpdate, db: AsyncS
 
 # ========== Acompanhamentos ==========
 
-@router.get("/acompanhamentos", response_model=List[AcompanhamentoRead])
+@router.get("/acompanhamentos/", response_model=List[AcompanhamentoRead])
 async def list_acompanhamentos(
-    projeto_externo_id: int | None = None,
-    skip: int = 0, limit: int = 50,
-    db: AsyncSession = Depends(get_db), _=Depends(get_current_user),
+    projeto_externo_id: Optional[int] = None,
+    skip: int = 0,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
 ):
     q = select(AcompanhamentoProjeto)
     if projeto_externo_id:
@@ -83,7 +108,7 @@ async def get_acompanhamento(acomp_id: int, db: AsyncSession = Depends(get_db), 
     return obj
 
 
-@router.post("/acompanhamentos", response_model=AcompanhamentoRead, status_code=201)
+@router.post("/acompanhamentos/", response_model=AcompanhamentoRead, status_code=201)
 async def create_acompanhamento(body: AcompanhamentoCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
     obj = AcompanhamentoProjeto(**body.model_dump())
     db.add(obj)
@@ -113,6 +138,7 @@ async def delete_acompanhamento(acomp_id: int, db: AsyncSession = Depends(get_db
     if not obj:
         raise HTTPException(404, "Acompanhamento não encontrado")
     await db.delete(obj)
+    logger.info("Acompanhamento %s deletado (cascade impedimentos/orientador/sprints)", acomp_id)
 
 
 # ========== Impedimentos ==========

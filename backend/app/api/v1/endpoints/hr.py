@@ -1,13 +1,24 @@
-"""Endpoints de RH e Gestão Interna — Membros, Estrutura Organizacional, Alocações."""
-from fastapi import APIRouter, Depends, HTTPException, status
+"""Endpoints de RH e Gestão Interna — Membros, Estrutura Organizacional, Alocações.
+
+v2 — Melhorias:
+- GET /membros: filtro opcional por nome (LIKE case-insensitive)
+- DELETE /membros/{id}: soft-delete (seta ativo=False), requer admin
+- GET /membros/{id}/resumo: perfil completo com cargos, células, coordenações e projetos
+- GET /aniversariantes: aniversariantes do mês corrente (separado do dashboard)
+- GET /orgchart/divisoes: lista divisões sem carregar árvore completa (mais rápido)
+"""
+import logging
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
-from typing import List
+from datetime import date
 
 from app.core.database import get_db
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_admin
 from app.models.hr import (
     Celula, Coordenacao, Cargo, Membro,
     MembroCargo, MembroCelula, MembroCoordenacao, MembroProjeto,
@@ -23,6 +34,7 @@ from app.schemas.hr import (
     OrgNoCreate, OrgDivisaoCreate, OrgDivisaoRead, OrgNoRead,
 )
 
+logger = logging.getLogger("metaapp")
 router = APIRouter()
 
 # ========== Estrutura Organizacional ==========
@@ -75,9 +87,53 @@ async def create_cargo(body: OrgCreate, db: AsyncSession = Depends(get_db), _=De
 # ========== Membros ==========
 
 @router.get("/membros", response_model=List[MembroRead])
-async def list_membros(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
-    r = await db.execute(select(Membro).offset(skip).limit(limit))
+async def list_membros(
+    nome: Optional[str] = Query(None, description="Filtrar por nome (busca parcial)"),
+    apenas_ativos: bool = Query(True, description="Se True, retorna apenas membros ativos"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Lista membros com filtro opcional por nome e status ativo."""
+    q = select(Membro)
+    if apenas_ativos:
+        q = q.where(Membro.ativo == True)
+    if nome:
+        q = q.where(Membro.nome.ilike(f"%{nome}%"))
+    r = await db.execute(q.offset(skip).limit(limit))
     return r.scalars().all()
+
+
+@router.get("/aniversariantes", summary="Aniversariantes do mês corrente")
+async def get_aniversariantes(
+    mes: Optional[int] = Query(None, ge=1, le=12, description="Mês (1-12). Default: mês atual"),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Retorna membros ativos que fazem aniversário no mês informado (ou mês atual)."""
+    mes_alvo = mes or date.today().month
+    r = await db.execute(
+        select(Membro)
+        .where(
+            Membro.ativo == True,
+            Membro.data_nascimento.isnot(None),
+        )
+        .order_by(Membro.nome)
+    )
+    membros = r.scalars().all()
+
+    # Filtragem em Python para compatibilidade MySQL (func.extract varia entre dialetos)
+    result = []
+    for m in membros:
+        if m.data_nascimento and m.data_nascimento.month == mes_alvo:
+            result.append({
+                "id": m.id,
+                "nome": m.nome,
+                "data_nascimento": m.data_nascimento.isoformat() if m.data_nascimento else None,
+                "foto_url": m.foto_url,
+            })
+    return result
 
 
 @router.get("/membros/{membro_id}", response_model=MembroRead)
@@ -87,6 +143,68 @@ async def get_membro(membro_id: int, db: AsyncSession = Depends(get_db), _=Depen
     if not obj:
         raise HTTPException(404, "Membro não encontrado")
     return obj
+
+
+@router.get("/membros/{membro_id}/resumo", summary="Perfil completo do membro com alocações")
+async def get_membro_resumo(
+    membro_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Retorna dados completos do membro: perfil + cargos ativos + células + coordenações + projetos."""
+    r = await db.execute(select(Membro).where(Membro.id == membro_id))
+    m = r.scalar_one_or_none()
+    if not m:
+        raise HTTPException(404, "Membro não encontrado")
+
+    # Cargos ativos
+    cargos_r = await db.execute(
+        select(MembroCargo, Cargo)
+        .join(Cargo, MembroCargo.cargo_id == Cargo.id)
+        .where(MembroCargo.membro_id == membro_id, MembroCargo.ativo == True)
+    )
+    cargos = [{"id": mc.id, "cargo": c.nome, "data_inicio": mc.data_inicio} for mc, c in cargos_r]
+
+    # Células ativas
+    celulas_r = await db.execute(
+        select(MembroCelula, Celula)
+        .join(Celula, MembroCelula.celula_id == Celula.id)
+        .where(MembroCelula.membro_id == membro_id, MembroCelula.ativo == True)
+    )
+    celulas = [{"id": mc.id, "celula": c.nome} for mc, c in celulas_r]
+
+    # Coordenações ativas
+    coords_r = await db.execute(
+        select(MembroCoordenacao, Coordenacao)
+        .join(Coordenacao, MembroCoordenacao.coordenacao_id == Coordenacao.id)
+        .where(MembroCoordenacao.membro_id == membro_id, MembroCoordenacao.ativo == True)
+    )
+    coordenacoes = [{"id": mc.id, "coordenacao": c.nome} for mc, c in coords_r]
+
+    # Projetos ativos
+    from app.models.project_tracking import ProjetoExterno
+    projetos_r = await db.execute(
+        select(MembroProjeto, ProjetoExterno)
+        .join(ProjetoExterno, MembroProjeto.projeto_externo_id == ProjetoExterno.id)
+        .where(MembroProjeto.membro_id == membro_id, MembroProjeto.ativo == True)
+    )
+    projetos = [{"id": mp.id, "projeto": p.nome, "papel": mp.papel} for mp, p in projetos_r]
+
+    return {
+        "id": m.id,
+        "nome": m.nome,
+        "email": m.email,
+        "telefone": m.telefone,
+        "foto_url": m.foto_url,
+        "data_entrada": m.data_entrada.isoformat() if m.data_entrada else None,
+        "data_nascimento": m.data_nascimento.isoformat() if m.data_nascimento else None,
+        "destaque_texto": m.destaque_texto,
+        "ativo": m.ativo,
+        "cargos": cargos,
+        "celulas": celulas,
+        "coordenacoes": coordenacoes,
+        "projetos": projetos,
+    }
 
 
 @router.post("/membros", response_model=MembroRead, status_code=201)
@@ -109,6 +227,24 @@ async def update_membro(membro_id: int, body: MembroUpdate, db: AsyncSession = D
     await db.flush()
     await db.refresh(obj)
     return obj
+
+
+@router.delete("/membros/{membro_id}", status_code=204, summary="Desativar membro (soft-delete)")
+async def delete_membro(
+    membro_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """Soft-delete: seta ativo=False preservando histórico de alocações e projetos.
+    Requer permissão de administrador.
+    """
+    r = await db.execute(select(Membro).where(Membro.id == membro_id))
+    obj = r.scalar_one_or_none()
+    if not obj:
+        raise HTTPException(404, "Membro não encontrado")
+    obj.ativo = False
+    await db.flush()
+    logger.info("Membro %s (%s) desativado", membro_id, obj.nome)
 
 
 # ========== Alocações N:N ==========
@@ -206,6 +342,19 @@ def _build_tree(no: OrgNo) -> dict:
     }
 
 
+@router.get("/orgchart/divisoes", summary="Lista divisões do organograma (sem carregar árvore)")
+async def list_divisoes(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Lista rápida de divisões sem carregar a árvore de nós.
+    Use para popular selects/dropdowns antes de caregar o orgchart completo.
+    """
+    r = await db.execute(select(OrgDivisao).order_by(OrgDivisao.ordem))
+    divisoes = r.scalars().all()
+    return [{"id": d.id, "nome": d.nome, "slug": d.slug, "ordem": d.ordem} for d in divisoes]
+
+
 @router.get("/orgchart", summary="Árvore hierárquica do organograma (todas as divisões)")
 async def get_orgchart(
     db: AsyncSession = Depends(get_db),
@@ -228,7 +377,6 @@ async def get_orgchart(
 
     result = []
     for div in divisoes:
-        # Encontra o nó raiz (parent_id = None)
         nos_raiz = [n for n in div.nos if n.parent_id is None]
         root_data = _build_tree(nos_raiz[0]) if nos_raiz else None
         result.append({

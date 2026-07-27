@@ -1,18 +1,28 @@
-"""Dashboard — Métricas executivas calculadas dinamicamente a partir dos dados reais."""
-from datetime import datetime, date, timedelta
+"""Dashboard — Métricas executivas calculadas dinamicamente a partir dos dados reais.
+
+v2 — Correções e melhorias:
+- /deliveries-by-month: corrigido de strftime (SQLite) → DATE_FORMAT (MySQL)
+- /engagement-by-area: corrigida lógica para filtrar projetos pela coordenação correta
+  via membro_projeto → membro_coordenacao
+- /alertas: novo endpoint com notificações ativas (pagamentos atrasados, aniversários,
+  acompanhamentos vencidos há mais de 30 dias)
+"""
+from datetime import datetime, date, timedelta, timezone
 from typing import List
+import logging
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, extract
+from sqlalchemy import select, func, text
 
 from app.core.database import get_db
 from app.api.deps import get_current_user
-from app.models.hr import Membro, Coordenacao
+from app.models.hr import Membro, Coordenacao, MembroProjeto, MembroCoordenacao
 from app.models.project_tracking import ProjetoExterno, AcompanhamentoProjeto
 from app.models.financial import ContratoPagamento, Contrato
 from app.models.commercial import Oportunidade, Lead
 
+logger = logging.getLogger("metaapp")
 router = APIRouter()
 
 
@@ -24,7 +34,7 @@ async def get_dashboard(
     """Retorna métricas consolidadas para a tela inicial."""
 
     # RH
-    total_membros = (await db.execute(select(func.count(Membro.id)))).scalar() or 0
+    total_membros = (await db.execute(select(func.count(Membro.id)).where(Membro.ativo == True))).scalar() or 0
 
     # Projetos
     total_projetos = (await db.execute(select(func.count(ProjetoExterno.id)))).scalar() or 0
@@ -44,8 +54,8 @@ async def get_dashboard(
         .group_by(ContratoPagamento.status)
     )
     financeiro = {"pendente": 0.0, "pago": 0.0, "atrasado": 0.0, "cancelado": 0.0}
-    for status, val in pag_rows:
-        financeiro[status] = float(val or 0)
+    for row_status, val in pag_rows:
+        financeiro[row_status] = float(val or 0)
     financeiro["total_recebido"] = financeiro["pago"]
     financeiro["total_a_receber"] = financeiro["pendente"] + financeiro["atrasado"]
 
@@ -58,8 +68,8 @@ async def get_dashboard(
         .group_by(Oportunidade.status)
     )
     oportunidades = {}
-    for status, count in op_rows:
-        oportunidades[status] = count
+    for row_status, count in op_rows:
+        oportunidades[row_status] = count
 
     total_leads = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
 
@@ -128,7 +138,8 @@ async def get_home_data(
     aniv_rows = await db.execute(
         select(Membro)
         .where(
-            func.extract("month", Membro.data_nascimento) == hoje.month
+            Membro.ativo == True,
+            func.extract("month", Membro.data_nascimento) == hoje.month,
         )
         .order_by(func.extract("day", Membro.data_nascimento))
         .limit(5)
@@ -139,13 +150,13 @@ async def get_home_data(
         aniversariantes.append({
             "initials": initials,
             "name": m.nome,
-            "department": "",  # coordenação resolvida via join se necessário
+            "department": "",
         })
 
     # Reconhecimentos (membros com destaque_texto preenchido)
     rec_rows = await db.execute(
         select(Membro)
-        .where(Membro.destaque_texto.isnot(None))
+        .where(Membro.ativo == True, Membro.destaque_texto.isnot(None))
         .order_by(Membro.updated_at.desc())
         .limit(3)
     )
@@ -195,8 +206,10 @@ async def get_kpis(
     """KPIs calculados dinamicamente. NPS e Taxa de Entrega calculados a partir
     das notas de acompanhamento de projetos.
     """
-    # Headcount
-    headcount = (await db.execute(select(func.count(Membro.id)))).scalar() or 0
+    # Headcount (apenas ativos)
+    headcount = (await db.execute(
+        select(func.count(Membro.id)).where(Membro.ativo == True)
+    )).scalar() or 0
 
     # Projetos ativos
     projetos_ativos = (await db.execute(
@@ -212,14 +225,13 @@ async def get_kpis(
     taxa_entrega = round((float(media_qualidade) / 5.0) * 100) if media_qualidade else None
 
     # NPS Interno — média de satisfacao_geral convertida para escala NPS (-100 a 100)
-    # Escala: 5=Promotor(100), 4=Promotor(50), 3=Neutro(0), 2=Detrator(-50), 1=Detrator(-100)
+    # Escala: 1→-100, 3→0, 5→100
     media_satisfacao = (await db.execute(
         select(func.avg(AcompanhamentoProjeto.satisfacao_geral))
         .where(AcompanhamentoProjeto.satisfacao_geral.isnot(None))
     )).scalar()
     nps_interno = None
     if media_satisfacao:
-        # Mapeamento linear: 1→-100, 3→0, 5→100
         nps_interno = round(((float(media_satisfacao) - 1) / 4.0) * 200 - 100)
 
     return {
@@ -235,12 +247,15 @@ async def get_deliveries_by_month(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Conta acompanhamentos concluídos (qualidade_entrega >= 4) por mês."""
+    """Conta acompanhamentos por mês usando DATE_FORMAT (MySQL).
+    Corrigido: versão anterior usava strftime() do SQLite (incompatível com MySQL).
+    """
     rows = await db.execute(
         select(
-            func.strftime("%Y-%m", AcompanhamentoProjeto.data_avaliacao).label("mes"),
+            func.date_format(AcompanhamentoProjeto.data_avaliacao, "%Y-%m").label("mes"),
             func.count(AcompanhamentoProjeto.id).label("total"),
         )
+        .where(AcompanhamentoProjeto.data_avaliacao.isnot(None))
         .group_by("mes")
         .order_by("mes")
         .limit(12)
@@ -253,22 +268,27 @@ async def get_engagement_by_area(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Calcula a satisfação média de acompanhamentos por coordenação."""
-    # Usa satisfacao_geral dos acompanhamentos, relacionando via membro_projeto → membro_coordenacao
-    # Simplificado: busca coordenações e retorna média das notas dos projetos da coordenação
+    """Calcula a satisfação média de projetos segmentada por coordenação.
+
+    Corrigido: versão anterior retornava a mesma média global para todas as áreas.
+    Agora faz o join correto: acompanhamento → projeto → membro_projeto → membro_coordenacao.
+    """
     r = await db.execute(select(Coordenacao).order_by(Coordenacao.id))
     coordenacoes = r.scalars().all()
 
     result = []
     for coord in coordenacoes:
-        # Média de satisfacao_geral dos acompanhamentos de oportunidades desta coord
+        # Projetos cujos membros pertencem a esta coordenação
         media = (await db.execute(
             select(func.avg(AcompanhamentoProjeto.satisfacao_geral))
-            .join(
-                ProjetoExterno,
-                AcompanhamentoProjeto.projeto_externo_id == ProjetoExterno.id
+            .join(ProjetoExterno, AcompanhamentoProjeto.projeto_externo_id == ProjetoExterno.id)
+            .join(MembroProjeto, MembroProjeto.projeto_externo_id == ProjetoExterno.id)
+            .join(MembroCoordenacao, MembroCoordenacao.membro_id == MembroProjeto.membro_id)
+            .where(
+                MembroCoordenacao.coordenacao_id == coord.id,
+                MembroCoordenacao.ativo == True,
+                AcompanhamentoProjeto.satisfacao_geral.isnot(None),
             )
-            .where(AcompanhamentoProjeto.satisfacao_geral.isnot(None))
         )).scalar()
 
         score = round((float(media) / 5.0) * 100) if media else 0
@@ -293,7 +313,6 @@ async def get_active_projects(
 
     result = []
     for p in projetos:
-        # Determina o status visual baseado no progresso
         prog = p.progresso or 0
         if prog >= 70:
             visual_status = "no-prazo"
@@ -309,3 +328,82 @@ async def get_active_projects(
             "progress": prog,
         })
     return result
+
+
+@router.get("/alertas", summary="Notificações e alertas ativos do sistema")
+async def get_alertas(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Retorna alertas que requerem atenção:
+    - Pagamentos atrasados (vencidos e não pagos)
+    - Acompanhamentos de projetos com mais de 30 dias sem atualização
+    - Aniversariantes de hoje
+    """
+    hoje = date.today()
+    alertas = []
+
+    # 1. Pagamentos atrasados
+    pag_atrasados = await db.execute(
+        select(ContratoPagamento)
+        .where(
+            ContratoPagamento.status == "pendente",
+            ContratoPagamento.data_vencimento < hoje,
+        )
+        .order_by(ContratoPagamento.data_vencimento)
+        .limit(10)
+    )
+    for p in pag_atrasados.scalars().all():
+        dias = (hoje - p.data_vencimento).days
+        alertas.append({
+            "tipo": "pagamento_atrasado",
+            "nivel": "critico" if dias > 15 else "aviso",
+            "mensagem": f"Pagamento de R$ {float(p.valor):.2f} venceu há {dias} dia(s)",
+            "referencia_id": p.id,
+            "data": p.data_vencimento.isoformat(),
+        })
+
+    # 2. Projetos ativos sem acompanhamento há 30+ dias
+    limite_acomp = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=30)
+    projetos_sem_acomp = await db.execute(
+        select(ProjetoExterno)
+        .where(
+            ProjetoExterno.status.notin_(["encerrado", "cancelado", "concluido"]),
+            ~ProjetoExterno.id.in_(
+                select(AcompanhamentoProjeto.projeto_externo_id)
+                .where(AcompanhamentoProjeto.data_avaliacao >= limite_acomp)
+            )
+        )
+        .limit(10)
+    )
+    for p in projetos_sem_acomp.scalars().all():
+        alertas.append({
+            "tipo": "projeto_sem_acompanhamento",
+            "nivel": "aviso",
+            "mensagem": f"Projeto '{p.nome}' sem acompanhamento há mais de 30 dias",
+            "referencia_id": p.id,
+            "data": None,
+        })
+
+    # 3. Aniversariantes de hoje
+    aniv_hoje = await db.execute(
+        select(Membro)
+        .where(
+            Membro.ativo == True,
+            func.extract("month", Membro.data_nascimento) == hoje.month,
+            func.extract("day", Membro.data_nascimento) == hoje.day,
+        )
+    )
+    for m in aniv_hoje.scalars().all():
+        alertas.append({
+            "tipo": "aniversario",
+            "nivel": "info",
+            "mensagem": f"🎂 Hoje é aniversário de {m.nome}!",
+            "referencia_id": m.id,
+            "data": hoje.isoformat(),
+        })
+
+    return {
+        "total": len(alertas),
+        "alertas": alertas,
+    }

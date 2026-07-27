@@ -83,6 +83,7 @@ class ContratoBase(BaseModel):
     cliente_id: int
     projeto_externo_id: int
     valor_total: Decimal
+    status: Literal["ativo", "encerrado", "suspenso"] = "ativo"
     data_inicio: date | None = None
     data_fim: date | None = None
     fase_atual: str | None = None
@@ -97,6 +98,7 @@ class ContratoCreate(ContratoBase):
 
 class ContratoUpdate(BaseModel):
     valor_total: Decimal | None = None
+    status: Literal["ativo", "encerrado", "suspenso"] | None = None
     data_inicio: date | None = None
     data_fim: date | None = None
     fase_atual: str | None = None

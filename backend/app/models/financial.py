@@ -100,6 +100,11 @@ class Contrato(Base):
         ForeignKey("projeto_externo.id", ondelete="RESTRICT"), nullable=False
     )
     valor_total: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    status: Mapped[str] = mapped_column(
+        SAEnum("ativo", "encerrado", "suspenso", name="contrato_status"),
+        default="ativo",
+        nullable=False,
+    )
     data_inicio: Mapped[date | None] = mapped_column(Date, nullable=True)
     data_fim: Mapped[date | None] = mapped_column(Date, nullable=True)
     fase_atual: Mapped[str | None] = mapped_column(String(100), nullable=True)

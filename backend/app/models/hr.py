@@ -82,6 +82,7 @@ class Membro(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # Relationships
     user = relationship("User", foreign_keys=[user_id])

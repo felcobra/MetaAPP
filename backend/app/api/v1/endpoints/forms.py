@@ -1,6 +1,11 @@
-"""Endpoints do módulo de Formulários Dinâmicos (PAPE, Avaliação 360, etc.)."""
-from datetime import datetime
-from math import ceil
+"""Endpoints do módulo de Formulários Dinâmicos (PAPE, Avaliação 360, etc.).
+
+v2 — Melhorias:
+- datetime.now(timezone.utc) substitui datetime.utcnow() (deprecated Python 3.12+)
+- list_templates: N+1 eliminado com subquery de COUNT agregado
+- update_submissao: corrigido crash no PATCH parcial quando `status` não é enviado
+"""
+from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -32,17 +37,28 @@ async def list_templates(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    r = await db.execute(select(FormTemplate).where(FormTemplate.ativo == True).order_by(FormTemplate.id))
-    templates = r.scalars().all()
-    # Injeta total_steps para cada template
+    """Lista templates ativos.
+    Otimizado: uma única subquery conta os steps de todos os templates
+    (sem N+1 queries como na versão anterior).
+    """
+    # Subquery de contagem de steps por template
+    steps_sq = (
+        select(FormStep.template_id, func.count(FormStep.id).label("total_steps"))
+        .group_by(FormStep.template_id)
+        .subquery()
+    )
+
+    rows = await db.execute(
+        select(FormTemplate, func.coalesce(steps_sq.c.total_steps, 0).label("total_steps"))
+        .outerjoin(steps_sq, FormTemplate.id == steps_sq.c.template_id)
+        .where(FormTemplate.ativo == True)
+        .order_by(FormTemplate.id)
+    )
+
     result = []
-    for t in templates:
-        r2 = await db.execute(
-            select(func.count(FormStep.id)).where(FormStep.template_id == t.id)
-        )
-        total = r2.scalar() or 0
-        t.__dict__["total_steps"] = total
-        result.append(t)
+    for template, total in rows:
+        template.__dict__["total_steps"] = total
+        result.append(template)
     return result
 
 
@@ -60,8 +76,7 @@ async def get_template(
     obj = r.scalar_one_or_none()
     if not obj:
         raise HTTPException(404, "Template não encontrado")
-    r2 = await db.execute(select(func.count(FormStep.id)).where(FormStep.template_id == obj.id))
-    obj.__dict__["total_steps"] = r2.scalar() or 0
+    obj.__dict__["total_steps"] = len(obj.steps)
     return obj
 
 
@@ -121,7 +136,6 @@ async def list_submissoes(
     current_user: User = Depends(get_current_user),
 ):
     """Retorna submissões vinculadas ao membro do usuário logado."""
-    # Resolve membro pelo user_id
     r = await db.execute(select(Membro).where(Membro.user_id == current_user.id))
     membro = r.scalar_one_or_none()
     if not membro:
@@ -156,17 +170,28 @@ async def update_submissao(
     submission_id: int,
     body: FormSubmissionUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     r = await db.execute(select(FormSubmission).where(FormSubmission.id == submission_id))
     obj = r.scalar_one_or_none()
     if not obj:
         raise HTTPException(404, "Submissão não encontrada")
-    for k, v in body.model_dump(exclude_unset=True).items():
+
+    # IDOR: garante que o usuário só edita o próprio formulário (admin pode editar qualquer um)
+    if current_user.role != "admin":
+        membro_r = await db.execute(select(Membro).where(Membro.user_id == current_user.id))
+        membro = membro_r.scalar_one_or_none()
+        if not membro or obj.membro_id != membro.id:
+            raise HTTPException(403, "Acesso negado: esta submissão pertence a outro membro.")
+
+    updates = body.model_dump(exclude_unset=True)
+    for k, v in updates.items():
         setattr(obj, k, v)
-    # Marca data_submissao automaticamente ao concluir
-    if body.status == "concluido" and not obj.data_submissao:
-        obj.data_submissao = datetime.utcnow()
+
+    # Corrigido: verifica o campo no dict de updates, não em body diretamente
+    if updates.get("status") == "concluido" and not obj.data_submissao:
+        obj.data_submissao = datetime.now(timezone.utc).replace(tzinfo=None)
+
     await db.flush()
     await db.refresh(obj)
     return obj
@@ -184,12 +209,20 @@ async def upsert_respostas(
     submission_id: int,
     respostas: List[FormAnswerUpsert],
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Faz upsert das respostas. Se a resposta já existe, atualiza o valor."""
     r = await db.execute(select(FormSubmission).where(FormSubmission.id == submission_id))
-    if not r.scalar_one_or_none():
+    submissao = r.scalar_one_or_none()
+    if not submissao:
         raise HTTPException(404, "Submissão não encontrada")
+
+    # IDOR: só o próprio membro (ou admin) pode salvar respostas
+    if current_user.role != "admin":
+        membro_r = await db.execute(select(Membro).where(Membro.user_id == current_user.id))
+        membro = membro_r.scalar_one_or_none()
+        if not membro or submissao.membro_id != membro.id:
+            raise HTTPException(403, "Acesso negado: esta submissão pertence a outro membro.")
 
     results = []
     for item in respostas:
@@ -218,7 +251,19 @@ async def upsert_respostas(
 async def get_respostas(
     submission_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    r = await db.execute(select(FormAnswer).where(FormAnswer.submission_id == submission_id))
-    return r.scalars().all()
+    # IDOR: membro só lê as próprias respostas; admin vê qualquer uma
+    r = await db.execute(select(FormSubmission).where(FormSubmission.id == submission_id))
+    submissao = r.scalar_one_or_none()
+    if not submissao:
+        raise HTTPException(404, "Submissão não encontrada")
+
+    if current_user.role != "admin":
+        membro_r = await db.execute(select(Membro).where(Membro.user_id == current_user.id))
+        membro = membro_r.scalar_one_or_none()
+        if not membro or submissao.membro_id != membro.id:
+            raise HTTPException(403, "Acesso negado: esta submissão pertence a outro membro.")
+
+    r2 = await db.execute(select(FormAnswer).where(FormAnswer.submission_id == submission_id))
+    return r2.scalars().all()

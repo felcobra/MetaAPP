@@ -43,10 +43,12 @@ class MembroUpdate(BaseModel):
     foto_url: str | None = None
     destaque_texto: str | None = None
     user_id: int | None = None
+    ativo: bool | None = None
 
 
 class MembroRead(MembroBase):
     id: int
+    ativo: bool
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}

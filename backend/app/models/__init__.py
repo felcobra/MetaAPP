@@ -13,6 +13,9 @@ from app.core.database import Base  # noqa: F401
 # Usuários do sistema (autenticação)
 from app.models.user import User  # noqa: F401
 
+# Tokens revogados (logout seguro)
+from app.models.auth import RevokedToken  # noqa: F401
+
 # Módulo Comercial
 from app.models.commercial import (  # noqa: F401
     DimLeadOrigem,

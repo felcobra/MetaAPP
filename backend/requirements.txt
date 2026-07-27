@@ -14,5 +14,8 @@ python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
 python-multipart>=0.0.9
 
+# Rate limiting (proteção contra força bruta no login)
+slowapi>=0.1.9
+
 # Utilitários
 python-dotenv>=1.0.0
