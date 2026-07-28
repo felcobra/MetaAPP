@@ -19,7 +19,7 @@ from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 
 from app.core.database import get_db
-from app.api.deps import get_current_user, require_admin
+from app.api.deps import get_current_user, require_admin, require_director_or_admin
 from app.models.financial import (
     FormaPagamento, ContaBancaria, CategoriaTransacao,
     Cliente, Contrato, ContratoPagamento,
@@ -46,7 +46,7 @@ async def list_formas_pagamento(db: AsyncSession = Depends(get_db), _=Depends(ge
 
 
 @router.post("/formas-pagamento", response_model=FormaPagamentoRead, status_code=201)
-async def create_forma_pagamento(body: AuxCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def create_forma_pagamento(body: AuxCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     obj = FormaPagamento(**body.model_dump())
     db.add(obj)
     await db.flush()
@@ -61,7 +61,7 @@ async def list_contas(db: AsyncSession = Depends(get_db), _=Depends(get_current_
 
 
 @router.post("/contas-bancarias", response_model=ContaBancariaRead, status_code=201)
-async def create_conta(body: AuxCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def create_conta(body: AuxCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     obj = ContaBancaria(**body.model_dump())
     db.add(obj)
     await db.flush()
@@ -76,7 +76,7 @@ async def list_categorias(db: AsyncSession = Depends(get_db), _=Depends(get_curr
 
 
 @router.post("/categorias", response_model=CategoriaTransacaoRead, status_code=201)
-async def create_categoria(body: CategoriaTransacaoCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def create_categoria(body: CategoriaTransacaoCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     obj = CategoriaTransacao(**body.model_dump())
     db.add(obj)
     await db.flush()
@@ -124,7 +124,7 @@ async def get_cliente(cliente_id: int, db: AsyncSession = Depends(get_db), _=Dep
 
 
 @router.post("/clientes", response_model=ClienteRead, status_code=201)
-async def create_cliente(body: ClienteCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def create_cliente(body: ClienteCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     cpf_cnpj = _sanitize_cpf_cnpj(body.cpf_cnpj)
 
     if cpf_cnpj:
@@ -142,7 +142,7 @@ async def create_cliente(body: ClienteCreate, db: AsyncSession = Depends(get_db)
 
 
 @router.patch("/clientes/{cliente_id}", response_model=ClienteRead)
-async def update_cliente(cliente_id: int, body: ClienteUpdate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def update_cliente(cliente_id: int, body: ClienteUpdate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     r = await db.execute(select(Cliente).where(Cliente.id == cliente_id))
     obj = r.scalar_one_or_none()
     if not obj:
@@ -214,7 +214,7 @@ async def get_contrato(contrato_id: int, db: AsyncSession = Depends(get_db), _=D
 
 
 @router.post("/contratos", response_model=ContratoRead, status_code=201)
-async def create_contrato(body: ContratoCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def create_contrato(body: ContratoCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     obj = Contrato(**body.model_dump())
     db.add(obj)
     await db.flush()
@@ -223,7 +223,7 @@ async def create_contrato(body: ContratoCreate, db: AsyncSession = Depends(get_d
 
 
 @router.patch("/contratos/{contrato_id}", response_model=ContratoRead)
-async def update_contrato(contrato_id: int, body: ContratoUpdate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def update_contrato(contrato_id: int, body: ContratoUpdate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     r = await db.execute(select(Contrato).where(Contrato.id == contrato_id))
     obj = r.scalar_one_or_none()
     if not obj:
@@ -274,7 +274,7 @@ async def list_pagamentos(contrato_id: int, db: AsyncSession = Depends(get_db), 
 @router.post("/contratos/{contrato_id}/pagamentos", response_model=ContratoPagamentoRead, status_code=201)
 async def create_pagamento(
     contrato_id: int, body: ContratoPagamentoCreate,
-    db: AsyncSession = Depends(get_db), _=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin),
 ):
     obj = ContratoPagamento(**body.model_dump(), contrato_id=contrato_id)
     db.add(obj)
@@ -284,7 +284,7 @@ async def create_pagamento(
 
 
 @router.patch("/pagamentos/{pag_id}", response_model=ContratoPagamentoRead)
-async def update_pagamento(pag_id: int, body: ContratoPagamentoUpdate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def update_pagamento(pag_id: int, body: ContratoPagamentoUpdate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     r = await db.execute(select(ContratoPagamento).where(ContratoPagamento.id == pag_id))
     obj = r.scalar_one_or_none()
     if not obj:

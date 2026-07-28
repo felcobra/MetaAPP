@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, Menu, Search } from "lucide-react";
-import { currentUser } from "@/mocks/session";
+import { Bell, LogOut, Menu, Search } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { LogoMark } from "./Logo";
+import { useAuth } from "@/lib/auth-context";
 
 interface TopBarProps {
   pageTitle: string;
@@ -12,6 +12,13 @@ interface TopBarProps {
 }
 
 export function TopBar({ pageTitle, onMenuClick }: TopBarProps) {
+  const { user, logout } = useAuth();
+
+  // Fallback enquanto o perfil carrega
+  const displayName = user?.name ?? "…";
+  const displayRole = user?.role ?? "";
+  const displayInitials = user?.initials ?? "?";
+
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-slate-200 bg-white px-4 sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
@@ -55,16 +62,28 @@ export function TopBar({ pageTitle, onMenuClick }: TopBarProps) {
         >
           <Bell className="h-4 w-4" />
         </button>
+
         <Link
           href="/profile"
           className="hidden items-center gap-2.5 rounded-xl px-2 py-1 sm:flex hover:bg-slate-50"
         >
-          <Avatar initials={currentUser.initials} size="sm" />
+          <Avatar initials={displayInitials} size="sm" />
           <div className="leading-tight">
-            <p className="text-sm font-semibold text-slate-900">{currentUser.name}</p>
-            <p className="text-xs text-slate-400">{currentUser.role}</p>
+            <p className="text-sm font-semibold text-slate-900">{displayName}</p>
+            <p className="text-xs text-slate-400">{displayRole}</p>
           </div>
         </Link>
+
+        {/* Botão de logout */}
+        <button
+          type="button"
+          onClick={() => void logout()}
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
+          aria-label="Sair da conta"
+          title="Sair"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
       </div>
     </header>
   );

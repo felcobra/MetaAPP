@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # Security
     SECRET_KEY: str = "TROQUE_ESTA_CHAVE_EM_PRODUCAO"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 8  # 8 horas
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # 1 hora (MED-01: reduzido de 8h para limitar janela de exploração)
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # Database (MySQL)
@@ -44,6 +44,9 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://localhost:3001",
     ]
+    # MED-04: métodos e headers explicitamente permitidos (em vez de allow all)
+    ALLOWED_METHODS: List[str] = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+    ALLOWED_HEADERS: List[str] = ["Content-Type", "Authorization"]
 
     @model_validator(mode="after")
     def validate_production_settings(self) -> "Settings":

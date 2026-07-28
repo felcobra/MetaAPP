@@ -18,7 +18,7 @@ from sqlalchemy.orm import selectinload
 from datetime import date
 
 from app.core.database import get_db
-from app.api.deps import get_current_user, require_admin
+from app.api.deps import get_current_user, require_admin, require_director_or_admin
 from app.models.hr import (
     Celula, Coordenacao, Cargo, Membro,
     MembroCargo, MembroCelula, MembroCoordenacao, MembroProjeto,
@@ -46,7 +46,7 @@ async def list_celulas(db: AsyncSession = Depends(get_db), _=Depends(get_current
 
 
 @router.post("/celulas", response_model=OrgRead, status_code=201)
-async def create_celula(body: OrgCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def create_celula(body: OrgCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     obj = Celula(**body.model_dump())
     db.add(obj)
     await db.flush()
@@ -61,7 +61,7 @@ async def list_coordenacoes(db: AsyncSession = Depends(get_db), _=Depends(get_cu
 
 
 @router.post("/coordenacoes", response_model=OrgRead, status_code=201)
-async def create_coordenacao(body: OrgCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def create_coordenacao(body: OrgCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     obj = Coordenacao(**body.model_dump())
     db.add(obj)
     await db.flush()
@@ -76,7 +76,7 @@ async def list_cargos(db: AsyncSession = Depends(get_db), _=Depends(get_current_
 
 
 @router.post("/cargos", response_model=OrgRead, status_code=201)
-async def create_cargo(body: OrgCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def create_cargo(body: OrgCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     obj = Cargo(**body.model_dump())
     db.add(obj)
     await db.flush()
@@ -118,22 +118,22 @@ async def get_aniversariantes(
         .where(
             Membro.ativo == True,
             Membro.data_nascimento.isnot(None),
+            # LOW-03: filtrar no SQL (MySQL func.extract) em vez de carregar
+            # todos os membros em memória e filtrar em Python.
+            func.extract("month", Membro.data_nascimento) == mes_alvo,
         )
-        .order_by(Membro.nome)
+        .order_by(func.extract("day", Membro.data_nascimento))
     )
     membros = r.scalars().all()
-
-    # Filtragem em Python para compatibilidade MySQL (func.extract varia entre dialetos)
-    result = []
-    for m in membros:
-        if m.data_nascimento and m.data_nascimento.month == mes_alvo:
-            result.append({
-                "id": m.id,
-                "nome": m.nome,
-                "data_nascimento": m.data_nascimento.isoformat() if m.data_nascimento else None,
-                "foto_url": m.foto_url,
-            })
-    return result
+    return [
+        {
+            "id": m.id,
+            "nome": m.nome,
+            "data_nascimento": m.data_nascimento.isoformat() if m.data_nascimento else None,
+            "foto_url": m.foto_url,
+        }
+        for m in membros
+    ]
 
 
 @router.get("/membros/{membro_id}", response_model=MembroRead)
@@ -208,7 +208,7 @@ async def get_membro_resumo(
 
 
 @router.post("/membros", response_model=MembroRead, status_code=201)
-async def create_membro(body: MembroCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def create_membro(body: MembroCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     obj = Membro(**body.model_dump())
     db.add(obj)
     await db.flush()
@@ -217,7 +217,7 @@ async def create_membro(body: MembroCreate, db: AsyncSession = Depends(get_db), 
 
 
 @router.patch("/membros/{membro_id}", response_model=MembroRead)
-async def update_membro(membro_id: int, body: MembroUpdate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def update_membro(membro_id: int, body: MembroUpdate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     r = await db.execute(select(Membro).where(Membro.id == membro_id))
     obj = r.scalar_one_or_none()
     if not obj:
@@ -255,7 +255,7 @@ def _handle_unique_conflict(e: IntegrityError) -> None:
 
 
 @router.post("/membros/cargos", response_model=MembroCargoRead, status_code=201)
-async def alocar_cargo(body: MembroCargoCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def alocar_cargo(body: MembroCargoCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     try:
         obj = MembroCargo(**body.model_dump())
         db.add(obj)
@@ -273,7 +273,7 @@ async def get_cargos_membro(membro_id: int, db: AsyncSession = Depends(get_db), 
 
 
 @router.post("/membros/celulas", response_model=MembroCelulaRead, status_code=201)
-async def alocar_celula(body: MembroCelulaCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def alocar_celula(body: MembroCelulaCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     try:
         obj = MembroCelula(**body.model_dump())
         db.add(obj)
@@ -291,7 +291,7 @@ async def get_celulas_membro(membro_id: int, db: AsyncSession = Depends(get_db),
 
 
 @router.post("/membros/coordenacoes", response_model=MembroCoordenacaoRead, status_code=201)
-async def alocar_coordenacao(body: MembroCoordenacaoCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def alocar_coordenacao(body: MembroCoordenacaoCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     try:
         obj = MembroCoordenacao(**body.model_dump())
         db.add(obj)
@@ -303,7 +303,7 @@ async def alocar_coordenacao(body: MembroCoordenacaoCreate, db: AsyncSession = D
 
 
 @router.post("/membros/projetos", response_model=MembroProjetoRead, status_code=201)
-async def alocar_projeto(body: MembroProjetoCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def alocar_projeto(body: MembroProjetoCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     try:
         obj = MembroProjeto(**body.model_dump())
         db.add(obj)
@@ -391,7 +391,7 @@ async def get_orgchart(
 async def create_divisao(
     body: OrgDivisaoCreate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    _=Depends(require_admin),
 ):
     obj = OrgDivisao(**body.model_dump())
     db.add(obj)
@@ -404,7 +404,7 @@ async def create_divisao(
 async def create_no(
     body: OrgNoCreate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    _=Depends(require_admin),
 ):
     obj = OrgNo(**body.model_dump())
     db.add(obj)
@@ -417,7 +417,7 @@ async def create_no(
 async def delete_no(
     no_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    _=Depends(require_admin),
 ):
     r = await db.execute(select(OrgNo).where(OrgNo.id == no_id))
     obj = r.scalar_one_or_none()

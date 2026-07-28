@@ -7,7 +7,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_director_or_admin
 from app.models.hr import Coordenacao
 from app.models.service import Servico
 from app.models.commercial import Oportunidade
@@ -61,7 +61,7 @@ async def create_servico(
     coordenacao_id: int,
     body: ServicoCreate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    _=Depends(require_director_or_admin),
 ):
     r = await db.execute(select(Coordenacao).where(Coordenacao.id == coordenacao_id))
     if not r.scalar_one_or_none():
@@ -78,7 +78,7 @@ async def update_servico(
     servico_id: int,
     body: ServicoCreate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    _=Depends(require_director_or_admin),
 ):
     r = await db.execute(select(Servico).where(Servico.id == servico_id))
     obj = r.scalar_one_or_none()
@@ -95,7 +95,7 @@ async def update_servico(
 async def delete_servico(
     servico_id: int,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    _=Depends(require_director_or_admin),
 ):
     r = await db.execute(select(Servico).where(Servico.id == servico_id))
     obj = r.scalar_one_or_none()

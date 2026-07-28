@@ -1,14 +1,16 @@
 """
 Meta App — Entry Point FastAPI
 
-v2 — Melhorias:
-- Logging estruturado configurado no startup
-- Middleware de logging de requests (tempo de resposta)
-- Handler global para erros não tratados (500s silenciosos eliminados)
-- Rate limiter (slowapi) integrado globalmente
+v3 — Melhorias de Segurança:
+- HIGH-04: Swagger/OpenAPI desabilitado em produção (DEBUG=False)
+- MED-04: CORS com métodos e headers explícitos (não mais allow_all)
+- LOW-02: Migrado de on_event (deprecated) para lifespan context manager
+- Mantidos: headers de segurança HTTP, rate limiter, global exception handler
 """
 import time
 import logging
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,26 +30,39 @@ logger = logging.getLogger("metaapp")
 # Rate limiter global (usado nos endpoints de auth)
 limiter = Limiter(key_func=get_remote_address)
 
+
+# LOW-02: lifespan substitui os deprecated @app.on_event("startup"/"shutdown")
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    logger.info("🚀 %s v%s iniciado", settings.PROJECT_NAME, settings.VERSION)
+    yield
+    logger.info("⏹️  %s desligando...", settings.PROJECT_NAME)
+
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     description="API interna da Meta Consultoria",
-    openapi_url=f"{settings.API_V1_STR}/openapi.json",
-    docs_url=f"{settings.API_V1_STR}/docs",
-    redoc_url=f"{settings.API_V1_STR}/redoc",
+    lifespan=lifespan,
+    # HIGH-04: documentação interativa desabilitada em produção
+    # Em produção (DEBUG=False), os endpoints /docs, /redoc e /openapi.json
+    # retornam 404, evitando exposição do schema completo da API.
+    openapi_url=f"{settings.API_V1_STR}/openapi.json" if settings.DEBUG else None,
+    docs_url=f"{settings.API_V1_STR}/docs" if settings.DEBUG else None,
+    redoc_url=f"{settings.API_V1_STR}/redoc" if settings.DEBUG else None,
 )
 
 # Integra rate limiter
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Configuração de CORS
+# MED-04: CORS com allowlists explícitas (não mais allow_methods=["*"])
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=settings.ALLOWED_METHODS,
+    allow_headers=settings.ALLOWED_HEADERS,
 )
 
 
@@ -111,13 +126,3 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 @app.get("/", tags=["Health"])
 def health_check():
     return {"status": "ok", "app": settings.PROJECT_NAME, "version": settings.VERSION}
-
-
-@app.on_event("startup")
-async def on_startup():
-    logger.info("🚀 %s v%s iniciado", settings.PROJECT_NAME, settings.VERSION)
-
-
-@app.on_event("shutdown")
-async def on_shutdown():
-    logger.info("⏹️  %s desligando...", settings.PROJECT_NAME)

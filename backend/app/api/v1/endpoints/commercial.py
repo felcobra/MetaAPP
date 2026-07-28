@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
-from app.api.deps import get_current_user, require_admin
+from app.api.deps import get_current_user, require_admin, require_director_or_admin
 from app.models.commercial import (
     DimLeadOrigem, DimMotivoPerdida, Lead, Oportunidade, OportunidadePhaseHistory
 )
@@ -38,7 +38,7 @@ async def list_origens(db: AsyncSession = Depends(get_db), _=Depends(get_current
 
 
 @router.post("/origens", response_model=DimBaseRead, status_code=201)
-async def create_origem(body: DimCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def create_origem(body: DimCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     obj = DimLeadOrigem(**body.model_dump())
     db.add(obj)
     await db.flush()
@@ -53,7 +53,7 @@ async def list_motivos(db: AsyncSession = Depends(get_db), _=Depends(get_current
 
 
 @router.post("/motivos-perda", response_model=DimBaseRead, status_code=201)
-async def create_motivo(body: DimCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def create_motivo(body: DimCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     obj = DimMotivoPerdida(**body.model_dump())
     db.add(obj)
     await db.flush()
@@ -103,7 +103,7 @@ async def create_lead(body: LeadCreate, db: AsyncSession = Depends(get_db), _=De
 @router.patch("/leads/{lead_id}", response_model=LeadRead)
 async def update_lead(
     lead_id: int, body: LeadUpdate,
-    db: AsyncSession = Depends(get_db), _=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin),
 ):
     r = await db.execute(select(Lead).where(Lead.id == lead_id))
     lead = r.scalar_one_or_none()
@@ -200,7 +200,7 @@ async def create_oportunidade(
 @router.patch("/oportunidades/{op_id}", response_model=OportunidadeRead)
 async def update_oportunidade(
     op_id: int, body: OportunidadeUpdate,
-    db: AsyncSession = Depends(get_db), _=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin),
 ):
     r = await db.execute(select(Oportunidade).where(Oportunidade.id == op_id))
     op = r.scalar_one_or_none()
@@ -259,7 +259,7 @@ async def get_phase_history(
 @router.post("/oportunidades/{op_id}/historico", response_model=PhaseHistoryRead, status_code=201)
 async def add_phase_history(
     op_id: int, body: PhaseHistoryCreate,
-    db: AsyncSession = Depends(get_db), _=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin),
 ):
     """Inserção manual de entrada no histórico (append-only)."""
     history = OportunidadePhaseHistory(oportunidade_id=op_id, **body.model_dump())
