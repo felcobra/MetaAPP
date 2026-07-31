@@ -1,5 +1,6 @@
 import { authFeatures } from "@/mocks/auth";
-import { LogoMark } from "@/components/layout/Logo";
+import LogoMark from "../../../public/logo.png";
+import Image from "next/image";
 
 export function AuthShowcasePanel() {
   return (
@@ -7,7 +8,13 @@ export function AuthShowcasePanel() {
       <div>
         <div className="flex items-center gap-3 text-2xl font-bold">
           Meta
-          <LogoMark className="h-7 w-7" />
+          <Image
+            src={LogoMark}
+            alt="Meta logo"
+            className="h-7 w-7"
+            width={28}
+            height={28}
+          />
           <span className="ml-1 h-7 w-px bg-white/30" />
         </div>
 
@@ -18,24 +25,28 @@ export function AuthShowcasePanel() {
         </h1>
 
         <ul className="mt-10 space-y-3">
-          {authFeatures.map(({ icon: Icon, title, prefix, highlight, suffix }) => (
-            <li
-              key={title}
-              className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4"
-            >
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl brand-gradient">
-                <Icon className="h-5 w-5 text-white" />
-              </div>
-              <div>
-                <p className="font-semibold text-white">{title}</p>
-                <p className="text-sm text-slate-400">
-                  {prefix}
-                  <span className="font-semibold text-sky-400">{highlight}</span>
-                  {suffix}
-                </p>
-              </div>
-            </li>
-          ))}
+          {authFeatures.map(
+            ({ icon: Icon, title, prefix, highlight, suffix }) => (
+              <li
+                key={title}
+                className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+              >
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl brand-gradient">
+                  <Icon className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <p className="font-semibold text-white">{title}</p>
+                  <p className="text-sm text-slate-400">
+                    {prefix}
+                    <span className="font-semibold text-sky-400">
+                      {highlight}
+                    </span>
+                    {suffix}
+                  </p>
+                </div>
+              </li>
+            ),
+          )}
         </ul>
       </div>
 

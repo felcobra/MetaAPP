@@ -1,9 +1,9 @@
 import type { OrgNode } from "@/types/orgchart";
 
-export const NODE_WIDTH = 190;
+export const NODE_WIDTH = 192;
 export const NODE_HEIGHT = 76;
-const H_GAP = 28;
-const V_GAP = 90;
+const H_GAP = 24;
+const V_GAP = 132;
 
 export interface LaidOutNode {
   node: OrgNode;
@@ -59,9 +59,11 @@ export function layoutOrgTree(root: OrgNode): OrgLayout {
 
   place(root, 0);
 
-  const width = cursorX;
+  // cursorX carries a trailing H_GAP from the last leaf; dropping it makes the
+  // measured width match the real tree, so the canvas centres it without drift.
+  const width = Math.max(cursorX - H_GAP, NODE_WIDTH);
   const maxDepth = Math.max(...nodes.map((entry) => entry.depth));
-  const height = (maxDepth + 1) * V_GAP + NODE_HEIGHT;
+  const height = maxDepth * V_GAP + NODE_HEIGHT;
 
   return { nodes, edges, width, height };
 }

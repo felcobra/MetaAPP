@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PapeStep } from "@/types/forms";
-import { LogoMark } from "@/components/layout/Logo";
+import LogoMark from "../../../public/logo.png";
+import Image from "next/image";
 import { Card } from "@/components/ui/Card";
 import { PapeFieldRenderer } from "./PapeFieldRenderer";
 
@@ -41,10 +42,18 @@ export function PapeWizard({ steps }: { steps: PapeStep[] }) {
     <div>
       <div className="brand-gradient-diagonal px-6 py-10 text-white sm:px-10 sm:py-14">
         <div className="mx-auto flex max-w-3xl items-center gap-2 text-sm font-semibold tracking-wide">
-          <LogoMark className="h-5 w-5" />
+          <Image
+            src={LogoMark}
+            alt="META"
+            className="h-5 w-5"
+            width={20}
+            height={20}
+          />
           META CONSULTORIA
         </div>
-        <h1 className="mx-auto mt-4 max-w-3xl text-4xl font-bold sm:text-5xl">PAPE</h1>
+        <h1 className="mx-auto mt-4 max-w-3xl text-4xl font-bold sm:text-5xl">
+          PAPE
+        </h1>
         <p className="mx-auto mt-2 max-w-3xl text-base text-white/90">
           Plano de Acompanhamento de Projetos Externos
         </p>
@@ -69,7 +78,9 @@ export function PapeWizard({ steps }: { steps: PapeStep[] }) {
           <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">
             {step.sectionLabel}
           </p>
-          <h2 className="mt-2 text-3xl font-bold text-slate-900">{step.title}</h2>
+          <h2 className="mt-2 text-3xl font-bold text-slate-900">
+            {step.title}
+          </h2>
           <p className="mt-1 text-sm text-slate-500">{step.description}</p>
 
           <div className="mt-8 space-y-8">
@@ -110,10 +121,15 @@ export function PapeWizard({ steps }: { steps: PapeStep[] }) {
         </div>
 
         <div className="mt-6 flex flex-col items-center justify-between gap-2 border-t border-slate-100 pt-4 text-xs text-slate-400 sm:flex-row">
-          <span>💾 Salvamento automático ativo · alterações salvas há instantes</span>
           <span>
-            Dúvidas? Fale com{" "}
-            <a href="mailto:pape@metaconsultoria.com" className="font-medium text-blue-600">
+            💾 Salvamento automático ativo · alterações salvas há instantes
+          </span>
+          <span>
+            Dúvidasa Fale com{" "}
+            <a
+              href="mailto:pape@metaconsultoria.com"
+              className="font-medium text-blue-600"
+            >
               pape@metaconsultoria.com
             </a>
           </span>

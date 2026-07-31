@@ -9,8 +9,8 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
 const paddingClasses = {
   none: "",
   sm: "p-4",
-  md: "p-6",
-  lg: "p-8",
+  md: "p-5 sm:p-6",
+  lg: "p-6 sm:p-8",
 };
 
 export function Card({
@@ -22,7 +22,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-slate-200 bg-white",
+        "min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm",
         paddingClasses[padding],
         className,
       )}
@@ -43,7 +43,7 @@ export function CardEyebrow({
   return (
     <p
       className={cn(
-        "text-xs font-semibold uppercase tracking-wide text-blue-600",
+        "min-w-0 break-words text-xs font-semibold uppercase tracking-wide text-blue-600",
         className,
       )}
     >

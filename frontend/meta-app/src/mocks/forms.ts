@@ -111,14 +111,14 @@ export const papeSteps: PapeStep[] = [
       {
         id: 9,
         type: "text",
-        label: "Qual o prazo total previsto (em semanas)?",
+        label: "Qual o prazo total previsto (em semanas)a",
         required: true,
         placeholder: "Ex: 12",
       },
       {
         id: 10,
         type: "radio",
-        label: "O escopo sofreu alterações desde o kickoff?",
+        label: "O escopo sofreu alterações desde o kickoffa",
         options: ["Sim", "Não"],
       },
     ],
@@ -155,14 +155,14 @@ export const papeSteps: PapeStep[] = [
       {
         id: 13,
         type: "radio",
-        label: "O projeto está dentro do cronograma?",
+        label: "O projeto está dentro do cronogramaa",
         required: true,
         options: ["No prazo", "Em atenção", "Atrasado"],
       },
       {
         id: 14,
         type: "textarea",
-        label: "Se houver atraso, qual o motivo principal?",
+        label: "Se houver atraso, qual o motivo principala",
         placeholder: "Descreva os principais bloqueios...",
       },
     ],
@@ -212,7 +212,7 @@ export const papeSteps: PapeStep[] = [
       {
         id: 19,
         type: "radio",
-        label: "Há pendências de faturamento?",
+        label: "Há pendências de faturamentoa",
         options: ["Sim", "Não"],
       },
     ],
@@ -249,7 +249,7 @@ export const papeSteps: PapeStep[] = [
       {
         id: 22,
         type: "textarea",
-        label: "Quais ações de mitigação estão em curso?",
+        label: "Quais ações de mitigação estão em cursoa",
         placeholder: "Descreva as ações e responsáveis...",
       },
     ],
@@ -301,7 +301,7 @@ export const papeSteps: PapeStep[] = [
       {
         id: 26,
         type: "radio",
-        label: "As entregas atendem ao padrão de qualidade Meta?",
+        label: "As entregas atendem ao padrão de qualidade Metaa",
         required: true,
         options: ["Sim", "Parcialmente", "Não"],
       },
@@ -360,7 +360,7 @@ export const papeSteps: PapeStep[] = [
       {
         id: 31,
         type: "radio",
-        label: "Confirma que todas as informações estão corretas?",
+        label: "Confirma que todas as informações estão corretasa",
         required: true,
         options: ["Sim, revisado", "Preciso revisar novamente"],
       },

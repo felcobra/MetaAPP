@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Building2,
+  CalendarDays,
   ClipboardList,
   Home,
   LayoutGrid,
@@ -13,6 +14,7 @@ export const primaryNav: NavItem[] = [
   { label: "Início", href: "/home", icon: Home },
   { label: "Formulários", href: "/forms", icon: ClipboardList },
   { label: "Dashboards", href: "/dashboards", icon: BarChart3 },
+  { label: "Agenda TI", href: "/agenda", icon: CalendarDays },
   { label: "Projetos externos", href: "/external-projects", icon: LayoutGrid },
   { label: "Organograma", href: "/orgchart", icon: Network },
   { label: "Serviços & Portfólio", href: "/portfolio", icon: ShoppingBag },

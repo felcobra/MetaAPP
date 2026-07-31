@@ -4,7 +4,7 @@
   --background: #eef1f8;
   --foreground: #0f172a;
 
-  /* Deep navy scale — login panel, dark cards (TV Meta, funil comercial) */
+  /* Deep navy scale: login panel, dark cards (TV Meta, funil comercial) */
   --color-navy-950: #0a0e1c;
   --color-navy-900: #0d1326;
   --color-navy-800: #131b33;
@@ -26,8 +26,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: Montserrat, Arial, Helvetica, sans-serif;
 
   --color-navy-950: var(--color-navy-950);
   --color-navy-900: var(--color-navy-900);

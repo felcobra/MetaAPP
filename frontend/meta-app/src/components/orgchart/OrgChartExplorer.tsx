@@ -3,8 +3,8 @@
 import { useState } from "react";
 import type { OrgDivision } from "@/types/orgchart";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { OrgDivisionSelect } from "./OrgDivisionSelect";
-import { OrgChartCanvas } from "./OrgChartCanvas";
+import { AreaSelector } from "./AreaSelector";
+import { OrgChart } from "./OrgChart";
 
 export function OrgChartExplorer({ divisions }: { divisions: OrgDivision[] }) {
   const [divisionId, setDivisionId] = useState(divisions[0]?.id);
@@ -17,10 +17,10 @@ export function OrgChartExplorer({ divisions }: { divisions: OrgDivision[] }) {
         title="Organograma"
         description="Conheça a estrutura, as áreas e as lideranças da Meta Consultoria."
         actions={
-          <OrgDivisionSelect divisions={divisions} value={division.id} onChange={setDivisionId} />
+          <AreaSelector divisions={divisions} value={division.id} onChange={setDivisionId} />
         }
       />
-      <OrgChartCanvas key={division.id} root={division.root} />
+      <OrgChart key={division.id} root={division.root} />
     </div>
   );
 }

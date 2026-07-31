@@ -32,7 +32,7 @@ export default function PortfolioPage() {
         description="A carta de serviços da Meta organizada pelas coordenações técnicas - e a demanda comercial que chega a cada coordenação."
       />
 
-      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mb-8 grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-4">
         <StatCard
           label="Serviços no portfólio"
           value={totalServices}

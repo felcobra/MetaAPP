@@ -25,42 +25,53 @@ export const metadata: Metadata = {
 export default function CommercialPage() {
   return (
     <AppShell pageTitle="Comercial">
-      <PageHeader
-        eyebrow="COMERCIAL & FINANCEIRO"
-        title="Comercial, Oportunidades & Clientes"
-        description="O fluxo comercial da Meta de ponta a ponta. Use o filtro de período no topo para recortar a leitura."
-      />
+      {/* @container: a barra lateral muda a largura DESTE bloco, nao a da janela.
+          Todo o escalonamento da pagina responde a esta largura, de modo que a
+          distribuicao em duas colunas se mantem com o menu aberto. */}
+      <div className="@container mx-auto min-w-0 max-w-[1500px]">
+        <PageHeader
+          eyebrow="COMERCIAL & FINANCEIRO"
+          title="Comercial, Oportunidades & Clientes"
+          description="O fluxo comercial da Meta de ponta a ponta. Use o filtro de periodo no topo para recortar a leitura."
+        />
 
-      <p className="mb-6 flex items-center gap-2 text-sm text-slate-500">
-        <Circle className="h-2 w-2 fill-blue-500 text-blue-500" />
-        <span className="font-semibold text-slate-700">
-          Lendo: {periodSummary.periodLabel}
-        </span>
-        Ajuste o período no filtro do topo.
-      </p>
+        <div className="mb-5 flex min-w-0 flex-wrap items-center gap-2.5 text-xs @3xl:text-[13px] @5xl:mb-6 @5xl:gap-3 @5xl:text-sm">
+          <span className="inline-flex max-w-full items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 font-semibold text-blue-700 @5xl:px-3.5">
+            <Circle className="h-2 w-2 shrink-0 fill-blue-600 text-blue-600" />
+            <span className="min-w-0 break-words">Lendo: {periodSummary.periodLabel}</span>
+          </span>
+          <span className="min-w-0 break-words text-slate-500">Ajuste o periodo no filtro do topo.</span>
+        </div>
 
-      <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <CommercialFunnelCard
-            stages={commercialFunnel}
-            openCount={periodSummary.pipelineOpen}
-            conversionRate={periodSummary.conversionRate}
-          />
+        {/* Duas colunas a partir de 48rem de conteudo (e nao de viewport): com o
+            menu aberto a pagina continua com a mesma distribuicao, as colunas so
+            ficam proporcionalmente menores. Sem minmax em px para que nenhuma
+            faixa force overflow horizontal. */}
+        <div className="mb-5 grid min-w-0 grid-cols-1 gap-4 @3xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] @3xl:gap-5 @5xl:grid-cols-[minmax(0,1.55fr)_minmax(0,0.95fr)] @6xl:mb-6 @6xl:gap-6">
+          <div className="min-w-0">
+            <CommercialFunnelCard
+              stages={commercialFunnel}
+              openCount={periodSummary.pipelineOpen}
+              conversionRate={periodSummary.conversionRate}
+            />
+          </div>
+          <div className="flex min-w-0 flex-col gap-4 @3xl:gap-5 @6xl:gap-6">
+            <OutcomeStatsCard stats={outcomeStats} />
+            <OriginBarList origins={opportunityOrigins} className="flex-1" />
+          </div>
         </div>
-        <div className="flex flex-col gap-6">
-          <OutcomeStatsCard stats={outcomeStats} />
-          <OriginBarList origins={opportunityOrigins} />
+
+        <div className="mb-5 grid min-w-0 grid-cols-1 gap-4 @3xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] @3xl:gap-5 @5xl:grid-cols-[minmax(0,1.55fr)_minmax(0,0.95fr)] @6xl:mb-6 @6xl:gap-6">
+          <div className="min-w-0">
+            <LossReasonsCard reasons={lossReasons} />
+          </div>
+          <div className="min-w-0">
+            <PeriodSummaryCard summary={periodSummary} className="h-full" />
+          </div>
         </div>
+
+        <OpportunitiesTable opportunities={opportunities} pagination={opportunitiesPagination} />
       </div>
-
-      <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <LossReasonsCard reasons={lossReasons} />
-        </div>
-        <PeriodSummaryCard summary={periodSummary} />
-      </div>
-
-      <OpportunitiesTable opportunities={opportunities} pagination={opportunitiesPagination} />
     </AppShell>
   );
 }

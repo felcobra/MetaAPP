@@ -2,7 +2,7 @@ import { Play } from "lucide-react";
 
 export function TvMetaBanner() {
   return (
-    <div className="flex h-full min-h-[280px] flex-col justify-between rounded-2xl bg-navy-950 p-8 text-white">
+    <div className="flex min-h-[280px] flex-col justify-between rounded-2xl bg-navy-950 p-8 text-white">
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-blue-400">JULHO</p>
         <h3 className="mt-2 text-3xl font-bold">TV Meta</h3>

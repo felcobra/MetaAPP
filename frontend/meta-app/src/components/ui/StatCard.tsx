@@ -21,24 +21,22 @@ export function StatCard({
   className,
 }: StatCardProps) {
   return (
-    <Card className={cn("flex items-start justify-between gap-4", className)}>
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-          {label}
-        </p>
-        <p className="mt-2 text-3xl font-bold text-slate-900">{value}</p>
-        {helper ? <div className="mt-1 text-sm text-slate-500">{helper}</div> : null}
+    <Card className={cn("flex min-w-0 flex-col gap-2", className)}>
+      <div className="flex min-w-0 items-center gap-2">
+        {Icon ? (
+          <div
+            className={cn(
+              "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600",
+              iconClassName,
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+          </div>
+        ) : null}
+        <p className="min-w-0 break-words text-sm font-medium text-slate-600">{label}</p>
       </div>
-      {Icon ? (
-        <div
-          className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600",
-            iconClassName,
-          )}
-        >
-          <Icon className="h-5 w-5" />
-        </div>
-      ) : null}
+      <p className="min-w-0 break-words text-2xl font-bold leading-tight text-slate-900">{value}</p>
+      {helper ? <div className="min-w-0 break-words text-xs text-slate-400">{helper}</div> : null}
     </Card>
   );
 }

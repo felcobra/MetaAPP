@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
 export interface TabOption {
   id: string;
   label: string;
+  icon?: ReactNode;
 }
 
 interface TabsProps {
@@ -53,13 +54,14 @@ export function Tabs({
             aria-selected={isActive}
             onClick={() => handleSelect(option.id)}
             className={cn(
-              "rounded-full font-medium transition-colors",
+              "inline-flex items-center gap-1.5 rounded-full font-medium transition-colors",
               size === "sm" ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm",
               isActive
                 ? "bg-white text-slate-900 shadow-sm"
                 : "text-slate-500 hover:text-slate-700",
             )}
           >
+            {option.icon}
             {option.label}
           </button>
         );

@@ -3,19 +3,19 @@
 import { ChevronDown } from "lucide-react";
 import type { OrgDivision } from "@/types/orgchart";
 
-interface OrgDivisionSelectProps {
+interface AreaSelectorProps {
   divisions: OrgDivision[];
   value: string;
   onChange: (id: string) => void;
 }
 
-export function OrgDivisionSelect({ divisions, value, onChange }: OrgDivisionSelectProps) {
+export function AreaSelector({ divisions, value, onChange }: AreaSelectorProps) {
   return (
     <div className="relative">
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-4 pr-10 text-sm font-medium text-slate-700 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 sm:w-56"
+        className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-4 pr-10 text-sm font-medium text-slate-700 shadow-sm outline-none transition-colors hover:border-slate-300 focus:border-blue-300 focus:ring-2 focus:ring-blue-100 sm:w-56"
       >
         {divisions.map((division) => (
           <option key={division.id} value={division.id}>
