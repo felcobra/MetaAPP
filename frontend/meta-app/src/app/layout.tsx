@@ -1,6 +1,13 @@
 import type { Metadata } from "next";
+import { Montserrat } from "next/font/google";
 import { AuthProvider } from "@/lib/auth-context";
 import "./globals.css";
+
+const montserrat = Montserrat({
+  subsets: ["latin", "latin-ext"],
+  display: "swap",
+  variable: "--font-montserrat",
+});
 
 export const metadata: Metadata = {
   title: "Meta App | Meta Consultoria",
@@ -18,7 +25,7 @@ export default function RootLayout({
   return (
     <html
       lang="pt-BR"
-      className={`h-full antialiased`}
+      className={`${montserrat.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-surface text-slate-900">
         <AuthProvider>
