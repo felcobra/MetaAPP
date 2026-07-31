@@ -11,7 +11,11 @@ alembic>=1.13.0
 
 # Segurança
 python-jose[cryptography]>=3.3.0
+# bcrypt travado em 4.0.1: passlib 1.7.4 detecta o backend lendo
+# bcrypt.__about__.__version__, removido no bcrypt>=4.1 — quebra o hash
+# de senha em runtime (ValueError: password cannot be longer than 72 bytes).
 passlib[bcrypt]>=1.7.4
+bcrypt==4.0.1
 python-multipart>=0.0.9
 
 # Rate limiting (proteção contra força bruta no login)
