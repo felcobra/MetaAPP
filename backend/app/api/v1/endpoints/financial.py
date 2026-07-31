@@ -25,8 +25,8 @@ from app.models.financial import (
     Cliente, Contrato, ContratoPagamento,
 )
 from app.schemas.financial import (
-    AuxCreate,
-    FormaPagamentoRead, ContaBancariaRead,
+    FormaPagamentoCreate, FormaPagamentoRead,
+    ContaBancariaCreate, ContaBancariaRead,
     CategoriaTransacaoCreate, CategoriaTransacaoRead,
     ClienteRead, ClienteCreate, ClienteUpdate,
     ContratoRead, ContratoCreate, ContratoUpdate,
@@ -46,7 +46,7 @@ async def list_formas_pagamento(db: AsyncSession = Depends(get_db), _=Depends(ge
 
 
 @router.post("/formas-pagamento", response_model=FormaPagamentoRead, status_code=201)
-async def create_forma_pagamento(body: AuxCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
+async def create_forma_pagamento(body: FormaPagamentoCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     obj = FormaPagamento(**body.model_dump())
     db.add(obj)
     await db.flush()
@@ -61,7 +61,7 @@ async def list_contas(db: AsyncSession = Depends(get_db), _=Depends(get_current_
 
 
 @router.post("/contas-bancarias", response_model=ContaBancariaRead, status_code=201)
-async def create_conta(body: AuxCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
+async def create_conta(body: ContaBancariaCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     obj = ContaBancaria(**body.model_dump())
     db.add(obj)
     await db.flush()
@@ -189,7 +189,7 @@ async def delete_cliente(
 @router.get("/contratos", response_model=List[ContratoRead])
 async def list_contratos(
     cliente_id: Optional[int] = None,
-    status: Optional[str] = Query(None, description="Filtrar por status: ativo, encerrado, suspenso"),
+    fase_atual: Optional[str] = Query(None, description="Filtrar por fase atual do contrato"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -198,8 +198,8 @@ async def list_contratos(
     q = select(Contrato)
     if cliente_id:
         q = q.where(Contrato.cliente_id == cliente_id)
-    if status:
-        q = q.where(Contrato.status == status)
+    if fase_atual:
+        q = q.where(Contrato.fase_atual == fase_atual)
     r = await db.execute(q.offset(skip).limit(limit))
     return r.scalars().all()
 
@@ -306,7 +306,8 @@ async def get_resumo(db: AsyncSession = Depends(get_db), _=Depends(get_current_u
     result = {"pendente": Decimal(0), "pago": Decimal(0), "atrasado": Decimal(0), "cancelado": Decimal(0)}
     total = Decimal(0)
     for row_status, val in rows:
-        result[row_status] = val or Decimal(0)
+        if row_status in result:
+            result[row_status] = val or Decimal(0)
         total += val or Decimal(0)
     result["total"] = total
     return result

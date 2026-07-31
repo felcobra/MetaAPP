@@ -42,6 +42,7 @@ from app.models.financial import (  # noqa: F401
     Cliente,
     Contrato,
     ContratoPagamento,
+    Transacao,
 )
 
 # Módulo de RH e Gestão Interna
@@ -54,12 +55,13 @@ from app.models.hr import (  # noqa: F401
     MembroCelula,
     MembroCoordenacao,
     MembroProjeto,
+    MembroPerfilMetaapp,
     OrgDivisao,
     OrgNo,
 )
 
 # Módulo de Portfólio (Serviços por Coordenação)
-from app.models.service import Servico  # noqa: F401
+from app.models.service import Servico, ProjetoServico  # noqa: F401
 
 # Módulo de Formulários Dinâmicos (PAPE, Avaliação 360, etc.)
 from app.models.forms import (  # noqa: F401

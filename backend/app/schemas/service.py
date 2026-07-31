@@ -1,24 +1,17 @@
-from datetime import datetime
 from pydantic import BaseModel
 
 
 class ServicoCreate(BaseModel):
+    coordenacao_id: int | None = None
     nome: str
-    descricao: str | None = None
-    icone: str | None = None
-    ordem: int = 0
-    ativo: bool = True
+    sigla: str | None = None
 
 
 class ServicoRead(BaseModel):
     id: int
-    coordenacao_id: int
+    coordenacao_id: int | None
     nome: str
-    descricao: str | None
-    icone: str | None
-    ordem: int
-    ativo: bool
-    created_at: datetime
+    sigla: str | None
     model_config = {"from_attributes": True}
 
 
@@ -26,7 +19,17 @@ class PortfolioCoordReadItem(BaseModel):
     """Coordenação enriquecida para a tela de portfólio."""
     id: int
     nome: str
-    descricao: str | None
+    sigla: str | None
     total_oportunidades: int
     servicos: list[ServicoRead]
+    model_config = {"from_attributes": True}
+
+
+class ProjetoServicoCreate(BaseModel):
+    projeto_externo_id: int
+    servico_id: int
+
+
+class ProjetoServicoRead(ProjetoServicoCreate):
+    id: int
     model_config = {"from_attributes": True}

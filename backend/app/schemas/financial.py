@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 # ---------- Auxiliares ----------
 
-class AuxCreate(BaseModel):
+class FormaPagamentoCreate(BaseModel):
     nome: str
     descricao: str | None = None
 
@@ -15,34 +15,36 @@ class FormaPagamentoRead(BaseModel):
     id: int
     nome: str
     descricao: str | None
-    ativo: bool
-    created_at: datetime
     model_config = {"from_attributes": True}
+
+
+class ContaBancariaCreate(BaseModel):
+    nome: str
+    tipo: Literal["banco", "pix", "dinheiro", "outro"]
+    ativo: bool = True
 
 
 class ContaBancariaRead(BaseModel):
     id: int
     nome: str
-    banco: str | None
-    agencia: str | None
-    numero_conta: str | None
+    tipo: Literal["banco", "pix", "dinheiro", "outro"]
     ativo: bool
-    created_at: datetime
     model_config = {"from_attributes": True}
 
 
 class CategoriaTransacaoCreate(BaseModel):
     nome: str
-    tipo: Literal["entrada", "saida"]
-    descricao: str | None = None
+    tipo: Literal["entrada", "saida", "ambos"]
+    celula_id: int | None = None
+    ativo: bool = True
 
 
 class CategoriaTransacaoRead(BaseModel):
     id: int
     nome: str
-    tipo: Literal["entrada", "saida"]
-    descricao: str | None
-    created_at: datetime
+    tipo: Literal["entrada", "saida", "ambos"]
+    celula_id: int | None
+    ativo: bool
     model_config = {"from_attributes": True}
 
 
@@ -53,7 +55,6 @@ class ClienteBase(BaseModel):
     cpf_cnpj: str | None = None
     email: str | None = None
     telefone: str | None = None
-    endereco: str | None = None
     external_source: str | None = None
     external_id: str | None = None
 
@@ -67,27 +68,29 @@ class ClienteUpdate(BaseModel):
     cpf_cnpj: str | None = None
     email: str | None = None
     telefone: str | None = None
-    endereco: str | None = None
 
 
 class ClienteRead(ClienteBase):
     id: int
-    created_at: datetime
-    updated_at: datetime
     model_config = {"from_attributes": True}
 
 
 # ---------- Contrato ----------
 
 class ContratoBase(BaseModel):
-    cliente_id: int
-    projeto_externo_id: int
-    valor_total: Decimal
-    status: Literal["ativo", "encerrado", "suspenso"] = "ativo"
+    cliente_id: int | None = None
+    projeto_externo_id: int | None = None
+    numero: str | None = None
+    valor_total: Decimal | None = None
     data_inicio: date | None = None
     data_fim: date | None = None
+    quantidade_parcelas: int | None = None
+    forma_pagamento_id: int | None = None
+    estimativa_gastos_ppp: Decimal | None = None
     fase_atual: str | None = None
-    descricao: str | None = None
+    data_vencimento_base: date | None = None
+    data_inicio_pagamento: datetime | None = None
+    finalizado_em: datetime | None = None
     external_source: str | None = None
     external_id: str | None = None
 
@@ -97,33 +100,39 @@ class ContratoCreate(ContratoBase):
 
 
 class ContratoUpdate(BaseModel):
+    numero: str | None = None
     valor_total: Decimal | None = None
-    status: Literal["ativo", "encerrado", "suspenso"] | None = None
     data_inicio: date | None = None
     data_fim: date | None = None
+    quantidade_parcelas: int | None = None
+    forma_pagamento_id: int | None = None
+    estimativa_gastos_ppp: Decimal | None = None
     fase_atual: str | None = None
-    descricao: str | None = None
+    data_vencimento_base: date | None = None
+    data_inicio_pagamento: datetime | None = None
+    finalizado_em: datetime | None = None
 
 
 class ContratoRead(ContratoBase):
     id: int
-    created_at: datetime
-    updated_at: datetime
     model_config = {"from_attributes": True}
 
 
 # ---------- Contrato Pagamento ----------
 
 class ContratoPagamentoBase(BaseModel):
-    contrato_id: int
-    valor: Decimal
-    data_vencimento: date
-    data_pagamento: date | None = None
-    status: Literal["pendente", "pago", "atrasado", "cancelado"] = "pendente"
+    contrato_id: int | None = None
+    cliente_id: int | None = None
+    projeto_externo_id: int | None = None
     forma_pagamento_id: int | None = None
-    conta_bancaria_id: int | None = None
-    categoria_id: int | None = None
-    observacao: str | None = None
+    valor: Decimal | None = None
+    data_vencimento: date | None = None
+    data_pagamento: date | None = None
+    status: str | None = "pendente"
+    numero_parcela: int | None = None
+    total_parcelas: int | None = None
+    external_id: str | None = None
+    external_source: str | None = None
 
 
 class ContratoPagamentoCreate(ContratoPagamentoBase):
@@ -134,17 +143,34 @@ class ContratoPagamentoUpdate(BaseModel):
     valor: Decimal | None = None
     data_vencimento: date | None = None
     data_pagamento: date | None = None
-    status: Literal["pendente", "pago", "atrasado", "cancelado"] | None = None
+    status: str | None = None
     forma_pagamento_id: int | None = None
-    conta_bancaria_id: int | None = None
-    categoria_id: int | None = None
-    observacao: str | None = None
+    numero_parcela: int | None = None
+    total_parcelas: int | None = None
 
 
 class ContratoPagamentoRead(ContratoPagamentoBase):
     id: int
-    created_at: datetime
-    updated_at: datetime
+    model_config = {"from_attributes": True}
+
+
+# ---------- Transação ----------
+
+class TransacaoCreate(BaseModel):
+    data: date | None = None
+    conta_id: int | None = None
+    tipo: Literal["entrada", "saida"]
+    categoria_id: int | None = None
+    celula_id: int | None = None
+    valor: Decimal | None = None
+    projeto_externo_id: int | None = None
+    contrato_pagamento_id: int | None = None
+
+
+class TransacaoRead(TransacaoCreate):
+    id: int
+    external_id: str | None = None
+    external_source: str | None = None
     model_config = {"from_attributes": True}
 
 

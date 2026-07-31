@@ -78,7 +78,7 @@ async def list_leads(
         q = q.where(Lead.nome.ilike(f"%{nome}%"))
     if empresa:
         q = q.where(Lead.empresa.ilike(f"%{empresa}%"))
-    r = await db.execute(q.order_by(Lead.created_at.desc()).offset(skip).limit(limit))
+    r = await db.execute(q.order_by(Lead.id.desc()).offset(skip).limit(limit))
     return r.scalars().all()
 
 
@@ -153,7 +153,7 @@ async def list_oportunidades(
     from sqlalchemy import func
     query = select(Oportunidade)
     if status:
-        query = query.where(Oportunidade.status == status)
+        query = query.where(Oportunidade.status_terminal == status)
     if lead_id:
         query = query.where(Oportunidade.lead_id == lead_id)
     if coordenacao_id:
@@ -207,17 +207,20 @@ async def update_oportunidade(
     if not op:
         raise HTTPException(404, "Oportunidade não encontrada")
 
-    old_fase = op.fase_atual
+    old_fase_id = op.fase_atual_id
+    old_fase_nome = op.fase_atual_nome
     updates = body.model_dump(exclude_unset=True)
     for k, v in updates.items():
         setattr(op, k, v)
 
     # Registra histórico automaticamente se a fase mudou
-    if "fase_atual" in updates and updates["fase_atual"] != old_fase:
+    if "fase_atual_nome" in updates and updates["fase_atual_nome"] != old_fase_nome:
         history = OportunidadePhaseHistory(
             oportunidade_id=op_id,
-            fase_anterior=old_fase,
-            fase_nova=updates["fase_atual"],
+            from_phase_id=old_fase_id,
+            from_phase_nome=old_fase_nome,
+            to_phase_id=updates.get("fase_atual_id"),
+            to_phase_nome=updates["fase_atual_nome"],
         )
         db.add(history)
 
@@ -251,7 +254,7 @@ async def get_phase_history(
     r = await db.execute(
         select(OportunidadePhaseHistory)
         .where(OportunidadePhaseHistory.oportunidade_id == op_id)
-        .order_by(OportunidadePhaseHistory.mudado_em)
+        .order_by(OportunidadePhaseHistory.moved_at)
     )
     return r.scalars().all()
 

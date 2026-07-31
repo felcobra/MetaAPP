@@ -1,18 +1,19 @@
 """Endpoints de RH e Gestão Interna — Membros, Estrutura Organizacional, Alocações.
 
-v2 — Melhorias:
-- GET /membros: filtro opcional por nome (LIKE case-insensitive)
-- DELETE /membros/{id}: soft-delete (seta ativo=False), requer admin
-- GET /membros/{id}/resumo: perfil completo com cargos, células, coordenações e projetos
-- GET /aniversariantes: aniversariantes do mês corrente (separado do dashboard)
-- GET /orgchart/divisoes: lista divisões sem carregar árvore completa (mais rápido)
+v3 — Alinhado ao schema real do banco de produção da empresa (banco_de_dados_bd):
+- `membro` no banco só tem id/nome/email. Campos de perfil estendido (telefone,
+  foto, data de nascimento, data de entrada, destaque, e o "ativo" usado para
+  soft-delete) vivem em `membro_perfil_metaapp`, tabela exclusiva do MetaApp.
+- celula/coordenacao/cargo não têm mais campo `descricao` (não existe no banco).
+- Alocações N:N (membro_cargo/celula/coordenacao) não têm mais data_inicio/
+  data_fim/ativo — são apenas vínculos simples no banco real.
 """
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from datetime import date
@@ -20,13 +21,16 @@ from datetime import date
 from app.core.database import get_db
 from app.api.deps import get_current_user, require_admin, require_director_or_admin
 from app.models.hr import (
-    Celula, Coordenacao, Cargo, Membro,
+    Celula, Coordenacao, Cargo, Membro, MembroPerfilMetaapp,
     MembroCargo, MembroCelula, MembroCoordenacao, MembroProjeto,
     OrgDivisao, OrgNo,
 )
 from app.schemas.hr import (
-    OrgCreate, OrgRead,
+    CelulaCreate, CelulaRead,
+    CoordenacaoCreate, CoordenacaoRead,
+    CargoCreate, CargoRead,
     MembroRead, MembroCreate, MembroUpdate,
+    MembroPerfilRead, MembroPerfilUpdate,
     MembroCargoCreate, MembroCargoRead,
     MembroCelulaCreate, MembroCelulaRead,
     MembroCoordenacaoCreate, MembroCoordenacaoRead,
@@ -39,14 +43,14 @@ router = APIRouter()
 
 # ========== Estrutura Organizacional ==========
 
-@router.get("/celulas", response_model=List[OrgRead])
+@router.get("/celulas", response_model=List[CelulaRead])
 async def list_celulas(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
     r = await db.execute(select(Celula))
     return r.scalars().all()
 
 
-@router.post("/celulas", response_model=OrgRead, status_code=201)
-async def create_celula(body: OrgCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
+@router.post("/celulas", response_model=CelulaRead, status_code=201)
+async def create_celula(body: CelulaCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     obj = Celula(**body.model_dump())
     db.add(obj)
     await db.flush()
@@ -54,14 +58,14 @@ async def create_celula(body: OrgCreate, db: AsyncSession = Depends(get_db), _=D
     return obj
 
 
-@router.get("/coordenacoes", response_model=List[OrgRead])
+@router.get("/coordenacoes", response_model=List[CoordenacaoRead])
 async def list_coordenacoes(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
     r = await db.execute(select(Coordenacao))
     return r.scalars().all()
 
 
-@router.post("/coordenacoes", response_model=OrgRead, status_code=201)
-async def create_coordenacao(body: OrgCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
+@router.post("/coordenacoes", response_model=CoordenacaoRead, status_code=201)
+async def create_coordenacao(body: CoordenacaoCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     obj = Coordenacao(**body.model_dump())
     db.add(obj)
     await db.flush()
@@ -69,19 +73,58 @@ async def create_coordenacao(body: OrgCreate, db: AsyncSession = Depends(get_db)
     return obj
 
 
-@router.get("/cargos", response_model=List[OrgRead])
+@router.get("/cargos", response_model=List[CargoRead])
 async def list_cargos(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
     r = await db.execute(select(Cargo))
     return r.scalars().all()
 
 
-@router.post("/cargos", response_model=OrgRead, status_code=201)
-async def create_cargo(body: OrgCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
+@router.post("/cargos", response_model=CargoRead, status_code=201)
+async def create_cargo(body: CargoCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     obj = Cargo(**body.model_dump())
     db.add(obj)
     await db.flush()
     await db.refresh(obj)
     return obj
+
+
+# ========== Perfil estendido (exclusivo do MetaApp) ==========
+
+async def _get_or_create_perfil(db: AsyncSession, membro_id: int) -> MembroPerfilMetaapp:
+    r = await db.execute(
+        select(MembroPerfilMetaapp).where(MembroPerfilMetaapp.membro_id == membro_id)
+    )
+    perfil = r.scalar_one_or_none()
+    if not perfil:
+        perfil = MembroPerfilMetaapp(membro_id=membro_id)
+        db.add(perfil)
+        await db.flush()
+        await db.refresh(perfil)
+    return perfil
+
+
+@router.get("/membros/{membro_id}/perfil", response_model=MembroPerfilRead)
+async def get_perfil_membro(membro_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+    r = await db.execute(select(Membro).where(Membro.id == membro_id))
+    if not r.scalar_one_or_none():
+        raise HTTPException(404, "Membro não encontrado")
+    return await _get_or_create_perfil(db, membro_id)
+
+
+@router.patch("/membros/{membro_id}/perfil", response_model=MembroPerfilRead)
+async def update_perfil_membro(
+    membro_id: int, body: MembroPerfilUpdate,
+    db: AsyncSession = Depends(get_db), _=Depends(get_current_user),
+):
+    r = await db.execute(select(Membro).where(Membro.id == membro_id))
+    if not r.scalar_one_or_none():
+        raise HTTPException(404, "Membro não encontrado")
+    perfil = await _get_or_create_perfil(db, membro_id)
+    for k, v in body.model_dump(exclude_unset=True).items():
+        setattr(perfil, k, v)
+    await db.flush()
+    await db.refresh(perfil)
+    return perfil
 
 
 # ========== Membros ==========
@@ -95,10 +138,14 @@ async def list_membros(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Lista membros com filtro opcional por nome e status ativo."""
+    """Lista membros com filtro opcional por nome e status ativo.
+    'ativo' é controlado pelo MetaApp (membro_perfil_metaapp), não pelo banco real.
+    """
     q = select(Membro)
     if apenas_ativos:
-        q = q.where(Membro.ativo == True)
+        q = q.outerjoin(MembroPerfilMetaapp, MembroPerfilMetaapp.membro_id == Membro.id).where(
+            (MembroPerfilMetaapp.ativo.is_(None)) | (MembroPerfilMetaapp.ativo == True)
+        )
     if nome:
         q = q.where(Membro.nome.ilike(f"%{nome}%"))
     r = await db.execute(q.offset(skip).limit(limit))
@@ -114,25 +161,23 @@ async def get_aniversariantes(
     """Retorna membros ativos que fazem aniversário no mês informado (ou mês atual)."""
     mes_alvo = mes or date.today().month
     r = await db.execute(
-        select(Membro)
+        select(Membro, MembroPerfilMetaapp)
+        .join(MembroPerfilMetaapp, MembroPerfilMetaapp.membro_id == Membro.id)
         .where(
-            Membro.ativo == True,
-            Membro.data_nascimento.isnot(None),
-            # LOW-03: filtrar no SQL (MySQL func.extract) em vez de carregar
-            # todos os membros em memória e filtrar em Python.
-            func.extract("month", Membro.data_nascimento) == mes_alvo,
+            MembroPerfilMetaapp.ativo == True,
+            MembroPerfilMetaapp.data_nascimento.isnot(None),
+            func.extract("month", MembroPerfilMetaapp.data_nascimento) == mes_alvo,
         )
-        .order_by(func.extract("day", Membro.data_nascimento))
+        .order_by(func.extract("day", MembroPerfilMetaapp.data_nascimento))
     )
-    membros = r.scalars().all()
     return [
         {
             "id": m.id,
             "nome": m.nome,
-            "data_nascimento": m.data_nascimento.isoformat() if m.data_nascimento else None,
-            "foto_url": m.foto_url,
+            "data_nascimento": p.data_nascimento.isoformat() if p.data_nascimento else None,
+            "foto_url": p.foto_url,
         }
-        for m in membros
+        for m, p in r
     ]
 
 
@@ -151,55 +196,56 @@ async def get_membro_resumo(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Retorna dados completos do membro: perfil + cargos ativos + células + coordenações + projetos."""
+    """Retorna dados completos do membro: perfil + cargos + células + coordenações + projetos."""
     r = await db.execute(select(Membro).where(Membro.id == membro_id))
     m = r.scalar_one_or_none()
     if not m:
         raise HTTPException(404, "Membro não encontrado")
 
-    # Cargos ativos
+    perfil = await _get_or_create_perfil(db, membro_id)
+
     cargos_r = await db.execute(
         select(MembroCargo, Cargo)
         .join(Cargo, MembroCargo.cargo_id == Cargo.id)
-        .where(MembroCargo.membro_id == membro_id, MembroCargo.ativo == True)
+        .where(MembroCargo.membro_id == membro_id)
     )
-    cargos = [{"id": mc.id, "cargo": c.nome, "data_inicio": mc.data_inicio} for mc, c in cargos_r]
+    cargos = [{"id": mc.id, "cargo": c.nome} for mc, c in cargos_r]
 
-    # Células ativas
     celulas_r = await db.execute(
         select(MembroCelula, Celula)
         .join(Celula, MembroCelula.celula_id == Celula.id)
-        .where(MembroCelula.membro_id == membro_id, MembroCelula.ativo == True)
+        .where(MembroCelula.membro_id == membro_id)
     )
     celulas = [{"id": mc.id, "celula": c.nome} for mc, c in celulas_r]
 
-    # Coordenações ativas
     coords_r = await db.execute(
         select(MembroCoordenacao, Coordenacao)
         .join(Coordenacao, MembroCoordenacao.coordenacao_id == Coordenacao.id)
-        .where(MembroCoordenacao.membro_id == membro_id, MembroCoordenacao.ativo == True)
+        .where(MembroCoordenacao.membro_id == membro_id)
     )
     coordenacoes = [{"id": mc.id, "coordenacao": c.nome} for mc, c in coords_r]
 
-    # Projetos ativos
     from app.models.project_tracking import ProjetoExterno
     projetos_r = await db.execute(
         select(MembroProjeto, ProjetoExterno)
         .join(ProjetoExterno, MembroProjeto.projeto_externo_id == ProjetoExterno.id)
-        .where(MembroProjeto.membro_id == membro_id, MembroProjeto.ativo == True)
+        .where(MembroProjeto.membro_id == membro_id)
     )
-    projetos = [{"id": mp.id, "projeto": p.nome, "papel": mp.papel} for mp, p in projetos_r]
+    projetos = [
+        {"id": mp.id, "projeto": p.nome, "data_entrada": mp.data_entrada, "data_saida": mp.data_saida}
+        for mp, p in projetos_r
+    ]
 
     return {
         "id": m.id,
         "nome": m.nome,
         "email": m.email,
-        "telefone": m.telefone,
-        "foto_url": m.foto_url,
-        "data_entrada": m.data_entrada.isoformat() if m.data_entrada else None,
-        "data_nascimento": m.data_nascimento.isoformat() if m.data_nascimento else None,
-        "destaque_texto": m.destaque_texto,
-        "ativo": m.ativo,
+        "telefone": perfil.telefone,
+        "foto_url": perfil.foto_url,
+        "data_entrada": perfil.data_entrada.isoformat() if perfil.data_entrada else None,
+        "data_nascimento": perfil.data_nascimento.isoformat() if perfil.data_nascimento else None,
+        "destaque_texto": perfil.destaque_texto,
+        "ativo": perfil.ativo,
         "cargos": cargos,
         "celulas": celulas,
         "coordenacoes": coordenacoes,
@@ -229,20 +275,21 @@ async def update_membro(membro_id: int, body: MembroUpdate, db: AsyncSession = D
     return obj
 
 
-@router.delete("/membros/{membro_id}", status_code=204, summary="Desativar membro (soft-delete)")
+@router.delete("/membros/{membro_id}", status_code=204, summary="Desativar membro (soft-delete no MetaApp)")
 async def delete_membro(
     membro_id: int,
     db: AsyncSession = Depends(get_db),
     _=Depends(require_admin),
 ):
-    """Soft-delete: seta ativo=False preservando histórico de alocações e projetos.
-    Requer permissão de administrador.
+    """Soft-delete: seta ativo=False em membro_perfil_metaapp, preservando o
+    cadastro real (`membro`) intocado. Requer permissão de administrador.
     """
     r = await db.execute(select(Membro).where(Membro.id == membro_id))
     obj = r.scalar_one_or_none()
     if not obj:
         raise HTTPException(404, "Membro não encontrado")
-    obj.ativo = False
+    perfil = await _get_or_create_perfil(db, membro_id)
+    perfil.ativo = False
     await db.flush()
     logger.info("Membro %s (%s) desativado", membro_id, obj.nome)
 
@@ -320,25 +367,26 @@ async def get_projetos_membro(membro_id: int, db: AsyncSession = Depends(get_db)
     return r.scalars().all()
 
 
-# ========== OrgChart hierárquico ==========
+# ========== OrgChart hierárquico (exclusivo do MetaApp) ==========
 
-def _build_tree(no: OrgNo) -> dict:
+def _build_tree(no: OrgNo, perfis_by_membro: dict) -> dict:
     """Converte um OrgNo SQLAlchemy em dict recursivo para o schema OrgNoRead."""
     membro_data = None
     if no.membro:
         m = no.membro
+        perfil = perfis_by_membro.get(m.id)
         membro_data = {
             "id": m.id,
             "nome": m.nome,
             "email": m.email,
-            "telefone": m.telefone,
-            "foto_url": m.foto_url,
+            "telefone": perfil.telefone if perfil else None,
+            "foto_url": perfil.foto_url if perfil else None,
         }
     return {
         "id": no.id,
         "titulo": no.titulo,
         "membro": membro_data,
-        "filhos": [_build_tree(filho) for filho in (no.filhos or [])],
+        "filhos": [_build_tree(filho, perfis_by_membro) for filho in (no.filhos or [])],
     }
 
 
@@ -375,10 +423,13 @@ async def get_orgchart(
     )
     divisoes = r.scalars().all()
 
+    perfis_r = await db.execute(select(MembroPerfilMetaapp))
+    perfis_by_membro = {p.membro_id: p for p in perfis_r.scalars().all()}
+
     result = []
     for div in divisoes:
         nos_raiz = [n for n in div.nos if n.parent_id is None]
-        root_data = _build_tree(nos_raiz[0]) if nos_raiz else None
+        root_data = _build_tree(nos_raiz[0], perfis_by_membro) if nos_raiz else None
         result.append({
             "id": div.slug,
             "label": div.nome,

@@ -9,6 +9,7 @@ Segurança:
 from pydantic_settings import BaseSettings
 from pydantic import model_validator
 from typing import List
+from urllib.parse import quote_plus
 import warnings
 
 
@@ -34,8 +35,12 @@ class Settings(BaseSettings):
 
     @property
     def DATABASE_URL(self) -> str:
+        # DB_USER/DB_PASSWORD são URL-encoded pois podem conter caracteres
+        # especiais (ex: "@") que quebrariam o parsing da connection string.
+        user = quote_plus(self.DB_USER)
+        password = quote_plus(self.DB_PASSWORD)
         return (
-            f"mysql+aiomysql://{self.DB_USER}:{self.DB_PASSWORD}"
+            f"mysql+aiomysql://{user}:{password}"
             f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
         )
 

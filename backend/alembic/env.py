@@ -14,7 +14,9 @@ from app.models import *  # noqa: F401, F403
 from app.core.config import settings
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# "%" precisa ser escapado para "%%" pois configparser trata "%" como
+# caractere de interpolação (senhas URL-encoded podem conter "%XX").
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

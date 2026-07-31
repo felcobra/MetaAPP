@@ -16,7 +16,7 @@ from typing import List
 from app.core.database import get_db
 from app.api.deps import get_current_user, require_admin
 from app.models.user import User
-from app.models.hr import Membro
+from app.models.hr import Membro, MembroPerfilMetaapp
 from app.schemas.user import UserRead, UserCreate, UserUpdate
 from app.core.security import get_password_hash
 
@@ -55,21 +55,26 @@ async def get_me_membro(
     e habilitar formulários, alocações e perfil.
     Retorna 404 se o usuário não tiver membro vinculado (ex: admin externo).
     """
-    r = await db.execute(select(Membro).where(Membro.user_id == current_user.id))
-    membro = r.scalar_one_or_none()
-    if not membro:
+    r = await db.execute(
+        select(Membro, MembroPerfilMetaapp)
+        .join(MembroPerfilMetaapp, MembroPerfilMetaapp.membro_id == Membro.id)
+        .where(MembroPerfilMetaapp.user_id == current_user.id)
+    )
+    row = r.first()
+    if not row:
         raise HTTPException(
             status_code=404,
             detail="Usuário não possui membro associado. Contate o administrador.",
         )
+    membro, perfil = row
     return {
         "id": membro.id,
         "nome": membro.nome,
         "email": membro.email,
-        "telefone": membro.telefone,
-        "foto_url": membro.foto_url,
-        "data_entrada": membro.data_entrada.isoformat() if membro.data_entrada else None,
-        "ativo": membro.ativo,
+        "telefone": perfil.telefone,
+        "foto_url": perfil.foto_url,
+        "data_entrada": perfil.data_entrada.isoformat() if perfil.data_entrada else None,
+        "ativo": perfil.ativo,
     }
 
 

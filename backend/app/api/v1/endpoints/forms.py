@@ -16,7 +16,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
-from app.models.hr import Membro
+from app.models.hr import Membro, MembroPerfilMetaapp
 from app.models.forms import (
     FormTemplate, FormStep, FormField, FormSubmission, FormAnswer,
 )
@@ -28,6 +28,17 @@ from app.schemas.forms import (
 )
 
 router = APIRouter()
+
+
+async def _get_membro_by_user(db: AsyncSession, user_id: int) -> Membro | None:
+    """O vínculo membro↔usuário vive em membro_perfil_metaapp (exclusivo do
+    MetaApp) — a tabela `membro` real não tem user_id."""
+    r = await db.execute(
+        select(Membro)
+        .join(MembroPerfilMetaapp, MembroPerfilMetaapp.membro_id == Membro.id)
+        .where(MembroPerfilMetaapp.user_id == user_id)
+    )
+    return r.scalar_one_or_none()
 
 
 # ========== Templates ==========
@@ -136,8 +147,7 @@ async def list_submissoes(
     current_user: User = Depends(get_current_user),
 ):
     """Retorna submissões vinculadas ao membro do usuário logado."""
-    r = await db.execute(select(Membro).where(Membro.user_id == current_user.id))
-    membro = r.scalar_one_or_none()
+    membro = await _get_membro_by_user(db, current_user.id)
     if not membro:
         return []
     r2 = await db.execute(
@@ -154,8 +164,7 @@ async def create_submissao(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    r = await db.execute(select(Membro).where(Membro.user_id == current_user.id))
-    membro = r.scalar_one_or_none()
+    membro = await _get_membro_by_user(db, current_user.id)
     if not membro:
         raise HTTPException(400, "Usuário não possui membro associado. Contate o administrador.")
     obj = FormSubmission(membro_id=membro.id, **body.model_dump())
@@ -179,8 +188,7 @@ async def update_submissao(
 
     # IDOR: garante que o usuário só edita o próprio formulário (admin pode editar qualquer um)
     if current_user.role != "admin":
-        membro_r = await db.execute(select(Membro).where(Membro.user_id == current_user.id))
-        membro = membro_r.scalar_one_or_none()
+        membro = await _get_membro_by_user(db, current_user.id)
         if not membro or obj.membro_id != membro.id:
             raise HTTPException(403, "Acesso negado: esta submissão pertence a outro membro.")
 
@@ -219,8 +227,7 @@ async def upsert_respostas(
 
     # IDOR: só o próprio membro (ou admin) pode salvar respostas
     if current_user.role != "admin":
-        membro_r = await db.execute(select(Membro).where(Membro.user_id == current_user.id))
-        membro = membro_r.scalar_one_or_none()
+        membro = await _get_membro_by_user(db, current_user.id)
         if not membro or submissao.membro_id != membro.id:
             raise HTTPException(403, "Acesso negado: esta submissão pertence a outro membro.")
 
@@ -260,8 +267,7 @@ async def get_respostas(
         raise HTTPException(404, "Submissão não encontrada")
 
     if current_user.role != "admin":
-        membro_r = await db.execute(select(Membro).where(Membro.user_id == current_user.id))
-        membro = membro_r.scalar_one_or_none()
+        membro = await _get_membro_by_user(db, current_user.id)
         if not membro or submissao.membro_id != membro.id:
             raise HTTPException(403, "Acesso negado: esta submissão pertence a outro membro.")
 

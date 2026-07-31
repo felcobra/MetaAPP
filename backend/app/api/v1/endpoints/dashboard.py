@@ -1,29 +1,38 @@
 """Dashboard — Métricas executivas calculadas dinamicamente a partir dos dados reais.
 
-v2 — Correções e melhorias:
-- /deliveries-by-month: corrigido de strftime (SQLite) → DATE_FORMAT (MySQL)
-- /engagement-by-area: corrigida lógica para filtrar projetos pela coordenação correta
-  via membro_projeto → membro_coordenacao
-- /alertas: novo endpoint com notificações ativas (pagamentos atrasados, aniversários,
-  acompanhamentos vencidos há mais de 30 dias)
+v3 — Alinhado ao schema real do banco de produção da empresa (banco_de_dados_bd):
+- `ativo`/`data_nascimento`/`destaque_texto` de Membro vêm de membro_perfil_metaapp
+  (tabela exclusiva do MetaApp), não mais da tabela `membro` real.
+- ProjetoExterno.status agora é o enum real (ativo/finalizado/pausado); não existem
+  mais os campos `progresso`, `cliente_nome` nem `created_at` — progresso é estimado
+  a partir do acompanhamento mais recente (`pct_conclusao`) e o cliente vem via
+  Contrato → Cliente.
+- Oportunidade.status virou Oportunidade.status_terminal.
+- AcompanhamentoProjeto.qualidade_entrega/satisfacao_geral/data_avaliacao viraram
+  eficacia_metodologia/satisfacao_cliente/data_resposta.
 """
 from datetime import datetime, date, timedelta, timezone
-from typing import List
 import logging
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func
 
 from app.core.database import get_db
 from app.api.deps import get_current_user
-from app.models.hr import Membro, Coordenacao, MembroProjeto, MembroCoordenacao
+from app.models.hr import Membro, Coordenacao, MembroProjeto, MembroCoordenacao, MembroPerfilMetaapp
 from app.models.project_tracking import ProjetoExterno, AcompanhamentoProjeto
 from app.models.financial import ContratoPagamento, Contrato
 from app.models.commercial import Oportunidade, Lead
 
 logger = logging.getLogger("metaapp")
 router = APIRouter()
+
+_PROJETO_INATIVO = ("finalizado",)  # status que tiram o projeto da contagem de "ativos"
+
+_PCT_FAIXA_MEIO = {
+    "0-20%": 10, "21-40%": 30, "41-60%": 50, "61-80%": 70, "81-100%": 90,
+}
 
 
 @router.get("/", summary="Métricas gerais da plataforma")
@@ -33,15 +42,19 @@ async def get_dashboard(
 ):
     """Retorna métricas consolidadas para a tela inicial."""
 
-    # RH
-    total_membros = (await db.execute(select(func.count(Membro.id)).where(Membro.ativo == True))).scalar() or 0
+    # RH — ativos conforme membro_perfil_metaapp (membro sem perfil conta como ativo)
+    total_membros = (await db.execute(
+        select(func.count(Membro.id))
+        .outerjoin(MembroPerfilMetaapp, MembroPerfilMetaapp.membro_id == Membro.id)
+        .where((MembroPerfilMetaapp.ativo.is_(None)) | (MembroPerfilMetaapp.ativo == True))
+    )).scalar() or 0
 
     # Projetos
     total_projetos = (await db.execute(select(func.count(ProjetoExterno.id)))).scalar() or 0
 
     projetos_ativos = (await db.execute(
         select(func.count(ProjetoExterno.id))
-        .where(ProjetoExterno.status.notin_(["encerrado", "cancelado", "concluido"]))
+        .where(ProjetoExterno.status.notin_(_PROJETO_INATIVO))
     )).scalar() or 0
 
     total_acompanhamentos = (await db.execute(
@@ -55,41 +68,32 @@ async def get_dashboard(
     )
     financeiro = {"pendente": 0.0, "pago": 0.0, "atrasado": 0.0, "cancelado": 0.0}
     for row_status, val in pag_rows:
-        financeiro[row_status] = float(val or 0)
+        if row_status in financeiro:
+            financeiro[row_status] = float(val or 0)
     financeiro["total_recebido"] = financeiro["pago"]
     financeiro["total_a_receber"] = financeiro["pendente"] + financeiro["atrasado"]
 
-    # Total contratos ativos
     total_contratos = (await db.execute(select(func.count(Contrato.id)))).scalar() or 0
 
     # CRM — oportunidades por status
     op_rows = await db.execute(
-        select(Oportunidade.status, func.count(Oportunidade.id))
-        .group_by(Oportunidade.status)
+        select(Oportunidade.status_terminal, func.count(Oportunidade.id))
+        .group_by(Oportunidade.status_terminal)
     )
-    oportunidades = {}
-    for row_status, count in op_rows:
-        oportunidades[row_status] = count
+    oportunidades = {row_status: count for row_status, count in op_rows}
 
     total_leads = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
 
     return {
-        "rh": {
-            "total_membros": total_membros,
-        },
+        "rh": {"total_membros": total_membros},
         "projetos": {
             "total": total_projetos,
             "ativos": projetos_ativos,
             "total_acompanhamentos": total_acompanhamentos,
         },
         "financeiro": financeiro,
-        "contratos": {
-            "total": total_contratos,
-        },
-        "crm": {
-            "total_leads": total_leads,
-            "oportunidades": oportunidades,
-        },
+        "contratos": {"total": total_contratos},
+        "crm": {"total_leads": total_leads, "oportunidades": oportunidades},
     }
 
 
@@ -100,7 +104,6 @@ async def get_home_data(
 ):
     """Endpoint dedicado à tela Home do frontend."""
 
-    # Faturamento atual (soma dos pagamentos pagos no mês corrente)
     hoje = date.today()
     inicio_mes = hoje.replace(day=1)
 
@@ -112,68 +115,59 @@ async def get_home_data(
         )
     )).scalar() or 0.0
 
-    # Total faturado histórico
     fat_total = (await db.execute(
         select(func.sum(ContratoPagamento.valor))
         .where(ContratoPagamento.status == "pago")
     )).scalar() or 0.0
 
-    # Em negociação (oportunidades ativas)
     total_em_neg = (await db.execute(
-        select(func.count(Oportunidade.id)).where(Oportunidade.status == "ativo")
+        select(func.count(Oportunidade.id)).where(Oportunidade.status_terminal == "ativo")
     )).scalar() or 0
 
-    # Projetos overview
     projetos_ativos = (await db.execute(
         select(func.count(ProjetoExterno.id))
-        .where(ProjetoExterno.status.notin_(["encerrado", "cancelado", "concluido"]))
+        .where(ProjetoExterno.status.notin_(_PROJETO_INATIVO))
     )).scalar() or 0
 
     projetos_concluidos = (await db.execute(
         select(func.count(ProjetoExterno.id))
-        .where(ProjetoExterno.status.in_(["concluido"]))
+        .where(ProjetoExterno.status == "finalizado")
     )).scalar() or 0
 
-    # Aniversariantes do mês (data_nascimento no mês atual)
+    # Aniversariantes do mês (via membro_perfil_metaapp)
     aniv_rows = await db.execute(
-        select(Membro)
+        select(Membro, MembroPerfilMetaapp)
+        .join(MembroPerfilMetaapp, MembroPerfilMetaapp.membro_id == Membro.id)
         .where(
-            Membro.ativo == True,
-            func.extract("month", Membro.data_nascimento) == hoje.month,
+            MembroPerfilMetaapp.ativo == True,
+            MembroPerfilMetaapp.data_nascimento.isnot(None),
+            func.extract("month", MembroPerfilMetaapp.data_nascimento) == hoje.month,
         )
-        .order_by(func.extract("day", Membro.data_nascimento))
+        .order_by(func.extract("day", MembroPerfilMetaapp.data_nascimento))
         .limit(5)
     )
     aniversariantes = []
-    for m in aniv_rows.scalars().all():
+    for m, _perfil in aniv_rows:
         initials = "".join(p[0].upper() for p in m.nome.split()[:2])
-        aniversariantes.append({
-            "initials": initials,
-            "name": m.nome,
-            "department": "",
-        })
+        aniversariantes.append({"initials": initials, "name": m.nome, "department": ""})
 
-    # Reconhecimentos (membros com destaque_texto preenchido)
+    # Reconhecimentos (membros com destaque_texto preenchido em membro_perfil_metaapp)
     rec_rows = await db.execute(
-        select(Membro)
-        .where(Membro.ativo == True, Membro.destaque_texto.isnot(None))
-        .order_by(Membro.updated_at.desc())
+        select(Membro, MembroPerfilMetaapp)
+        .join(MembroPerfilMetaapp, MembroPerfilMetaapp.membro_id == Membro.id)
+        .where(MembroPerfilMetaapp.ativo == True, MembroPerfilMetaapp.destaque_texto.isnot(None))
+        .order_by(MembroPerfilMetaapp.updated_at.desc())
         .limit(3)
     )
     reconhecimentos = []
-    for m in rec_rows.scalars().all():
+    for m, perfil in rec_rows:
         initials = "".join(p[0].upper() for p in m.nome.split()[:2])
-        reconhecimentos.append({
-            "initials": initials,
-            "name": m.nome,
-            "achievement": m.destaque_texto,
-        })
+        reconhecimentos.append({"initials": initials, "name": m.nome, "achievement": perfil.destaque_texto})
 
-    # Sales funnel (oportunidades por fase)
     total_leads = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
     total_qualificados = total_em_neg
     op_fechadas = (await db.execute(
-        select(func.count(Oportunidade.id)).where(Oportunidade.status == "fechado")
+        select(func.count(Oportunidade.id)).where(Oportunidade.status_terminal == "fechado")
     )).scalar() or 0
 
     return {
@@ -189,10 +183,7 @@ async def get_home_data(
             {"label": "Fechados", "value": op_fechadas,
              "percentage": round(op_fechadas / total_leads * 100) if total_leads else 0},
         ],
-        "projects_overview": {
-            "active": projetos_ativos,
-            "completed": projetos_concluidos,
-        },
+        "projects_overview": {"active": projetos_ativos, "completed": projetos_concluidos},
         "birthdays": aniversariantes,
         "recognitions": reconhecimentos,
     }
@@ -203,32 +194,29 @@ async def get_kpis(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """KPIs calculados dinamicamente. NPS e Taxa de Entrega calculados a partir
-    das notas de acompanhamento de projetos.
-    """
-    # Headcount (apenas ativos)
+    """KPIs calculados dinamicamente a partir das notas de acompanhamento de projetos."""
     headcount = (await db.execute(
-        select(func.count(Membro.id)).where(Membro.ativo == True)
+        select(func.count(Membro.id))
+        .outerjoin(MembroPerfilMetaapp, MembroPerfilMetaapp.membro_id == Membro.id)
+        .where((MembroPerfilMetaapp.ativo.is_(None)) | (MembroPerfilMetaapp.ativo == True))
     )).scalar() or 0
 
-    # Projetos ativos
     projetos_ativos = (await db.execute(
         select(func.count(ProjetoExterno.id))
-        .where(ProjetoExterno.status.notin_(["encerrado", "cancelado", "concluido"]))
+        .where(ProjetoExterno.status.notin_(_PROJETO_INATIVO))
     )).scalar() or 0
 
-    # Taxa de entrega — média de qualidade_entrega nos acompanhamentos (escala 1-5 → 0-100%)
+    # Taxa de entrega — média de eficacia_metodologia (escala 1-5 → 0-100%)
     media_qualidade = (await db.execute(
-        select(func.avg(AcompanhamentoProjeto.qualidade_entrega))
-        .where(AcompanhamentoProjeto.qualidade_entrega.isnot(None))
+        select(func.avg(AcompanhamentoProjeto.eficacia_metodologia))
+        .where(AcompanhamentoProjeto.eficacia_metodologia.isnot(None))
     )).scalar()
     taxa_entrega = round((float(media_qualidade) / 5.0) * 100) if media_qualidade else None
 
-    # NPS Interno — média de satisfacao_geral convertida para escala NPS (-100 a 100)
-    # Escala: 1→-100, 3→0, 5→100
+    # NPS Interno — média de satisfacao_cliente convertida para escala NPS (-100 a 100)
     media_satisfacao = (await db.execute(
-        select(func.avg(AcompanhamentoProjeto.satisfacao_geral))
-        .where(AcompanhamentoProjeto.satisfacao_geral.isnot(None))
+        select(func.avg(AcompanhamentoProjeto.satisfacao_cliente))
+        .where(AcompanhamentoProjeto.satisfacao_cliente.isnot(None))
     )).scalar()
     nps_interno = None
     if media_satisfacao:
@@ -247,15 +235,13 @@ async def get_deliveries_by_month(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Conta acompanhamentos por mês usando DATE_FORMAT (MySQL).
-    Corrigido: versão anterior usava strftime() do SQLite (incompatível com MySQL).
-    """
+    """Conta acompanhamentos por mês usando DATE_FORMAT (MySQL)."""
     rows = await db.execute(
         select(
-            func.date_format(AcompanhamentoProjeto.data_avaliacao, "%Y-%m").label("mes"),
+            func.date_format(AcompanhamentoProjeto.data_resposta, "%Y-%m").label("mes"),
             func.count(AcompanhamentoProjeto.id).label("total"),
         )
-        .where(AcompanhamentoProjeto.data_avaliacao.isnot(None))
+        .where(AcompanhamentoProjeto.data_resposta.isnot(None))
         .group_by("mes")
         .order_by("mes")
         .limit(12)
@@ -269,25 +255,21 @@ async def get_engagement_by_area(
     _=Depends(get_current_user),
 ):
     """Calcula a satisfação média de projetos segmentada por coordenação.
-
-    Corrigido: versão anterior retornava a mesma média global para todas as áreas.
-    Agora faz o join correto: acompanhamento → projeto → membro_projeto → membro_coordenacao.
+    Join: acompanhamento → projeto → membro_projeto → membro_coordenacao.
     """
     r = await db.execute(select(Coordenacao).order_by(Coordenacao.id))
     coordenacoes = r.scalars().all()
 
     result = []
     for coord in coordenacoes:
-        # Projetos cujos membros pertencem a esta coordenação
         media = (await db.execute(
-            select(func.avg(AcompanhamentoProjeto.satisfacao_geral))
+            select(func.avg(AcompanhamentoProjeto.satisfacao_cliente))
             .join(ProjetoExterno, AcompanhamentoProjeto.projeto_externo_id == ProjetoExterno.id)
             .join(MembroProjeto, MembroProjeto.projeto_externo_id == ProjetoExterno.id)
             .join(MembroCoordenacao, MembroCoordenacao.membro_id == MembroProjeto.membro_id)
             .where(
                 MembroCoordenacao.coordenacao_id == coord.id,
-                MembroCoordenacao.ativo == True,
-                AcompanhamentoProjeto.satisfacao_geral.isnot(None),
+                AcompanhamentoProjeto.satisfacao_cliente.isnot(None),
             )
         )).scalar()
 
@@ -302,18 +284,36 @@ async def get_active_projects(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Retorna projetos ativos no formato que a tabela do Dashboard consome."""
+    """Retorna projetos ativos no formato que a tabela do Dashboard consome.
+    Progresso estimado pelo pct_conclusao do acompanhamento mais recente;
+    cliente obtido via Contrato → Cliente (projeto_externo pode não ter contrato).
+    """
     r = await db.execute(
         select(ProjetoExterno)
-        .where(ProjetoExterno.status.notin_(["encerrado", "cancelado", "concluido"]))
-        .order_by(ProjetoExterno.created_at.desc())
+        .where(ProjetoExterno.status.notin_(_PROJETO_INATIVO))
+        .order_by(ProjetoExterno.id.desc())
         .limit(20)
     )
     projetos = r.scalars().all()
 
     result = []
     for p in projetos:
-        prog = p.progresso or 0
+        ultimo_acomp = (await db.execute(
+            select(AcompanhamentoProjeto.pct_conclusao)
+            .where(AcompanhamentoProjeto.projeto_externo_id == p.id)
+            .order_by(AcompanhamentoProjeto.data_resposta.desc())
+            .limit(1)
+        )).scalar()
+        prog = _PCT_FAIXA_MEIO.get(ultimo_acomp, 0)
+
+        cliente_nome = (await db.execute(
+            select(Contrato)
+            .join(Contrato.cliente)
+            .where(Contrato.projeto_externo_id == p.id)
+            .limit(1)
+        )).scalar_one_or_none()
+        manager = cliente_nome.cliente.nome if cliente_nome and cliente_nome.cliente else "—"
+
         if prog >= 70:
             visual_status = "no-prazo"
         elif prog >= 40:
@@ -323,7 +323,7 @@ async def get_active_projects(
 
         result.append({
             "project": p.nome,
-            "manager": p.cliente_nome or "—",
+            "manager": manager,
             "status": visual_status,
             "progress": prog,
         })
@@ -364,14 +364,14 @@ async def get_alertas(
         })
 
     # 2. Projetos ativos sem acompanhamento há 30+ dias
-    limite_acomp = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=30)
+    limite_acomp = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=30)).date()
     projetos_sem_acomp = await db.execute(
         select(ProjetoExterno)
         .where(
-            ProjetoExterno.status.notin_(["encerrado", "cancelado", "concluido"]),
+            ProjetoExterno.status.notin_(_PROJETO_INATIVO),
             ~ProjetoExterno.id.in_(
                 select(AcompanhamentoProjeto.projeto_externo_id)
-                .where(AcompanhamentoProjeto.data_avaliacao >= limite_acomp)
+                .where(AcompanhamentoProjeto.data_resposta >= limite_acomp)
             )
         )
         .limit(10)
@@ -388,10 +388,11 @@ async def get_alertas(
     # 3. Aniversariantes de hoje
     aniv_hoje = await db.execute(
         select(Membro)
+        .join(MembroPerfilMetaapp, MembroPerfilMetaapp.membro_id == Membro.id)
         .where(
-            Membro.ativo == True,
-            func.extract("month", Membro.data_nascimento) == hoje.month,
-            func.extract("day", Membro.data_nascimento) == hoje.day,
+            MembroPerfilMetaapp.ativo == True,
+            func.extract("month", MembroPerfilMetaapp.data_nascimento) == hoje.month,
+            func.extract("day", MembroPerfilMetaapp.data_nascimento) == hoje.day,
         )
     )
     for m in aniv_hoje.scalars().all():
@@ -403,7 +404,4 @@ async def get_alertas(
             "data": hoje.isoformat(),
         })
 
-    return {
-        "total": len(alertas),
-        "alertas": alertas,
-    }
+    return {"total": len(alertas), "alertas": alertas}

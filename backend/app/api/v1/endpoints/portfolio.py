@@ -32,8 +32,8 @@ async def list_portfolio(
         # Serviços da coordenação
         rs = await db.execute(
             select(Servico)
-            .where(Servico.coordenacao_id == coord.id, Servico.ativo == True)
-            .order_by(Servico.ordem)
+            .where(Servico.coordenacao_id == coord.id)
+            .order_by(Servico.nome)
         )
         servicos = rs.scalars().all()
 
@@ -47,7 +47,7 @@ async def list_portfolio(
         result.append({
             "id": coord.id,
             "nome": coord.nome,
-            "descricao": coord.descricao,
+            "sigla": coord.sigla,
             "total_oportunidades": total_op,
             "servicos": servicos,
         })
@@ -66,7 +66,7 @@ async def create_servico(
     r = await db.execute(select(Coordenacao).where(Coordenacao.id == coordenacao_id))
     if not r.scalar_one_or_none():
         raise HTTPException(404, "Coordenação não encontrada")
-    obj = Servico(coordenacao_id=coordenacao_id, **body.model_dump())
+    obj = Servico(coordenacao_id=coordenacao_id, **body.model_dump(exclude={"coordenacao_id"}))
     db.add(obj)
     await db.flush()
     await db.refresh(obj)

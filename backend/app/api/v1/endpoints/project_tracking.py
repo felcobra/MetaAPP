@@ -47,7 +47,7 @@ async def list_projetos(
     q = select(ProjetoExterno)
     if status_filtro:
         q = q.where(ProjetoExterno.status == status_filtro)
-    r = await db.execute(q.order_by(ProjetoExterno.created_at.desc()).offset(skip).limit(limit))
+    r = await db.execute(q.order_by(ProjetoExterno.id.desc()).offset(skip).limit(limit))
     return r.scalars().all()
 
 
@@ -95,7 +95,7 @@ async def list_acompanhamentos(
     q = select(AcompanhamentoProjeto)
     if projeto_externo_id:
         q = q.where(AcompanhamentoProjeto.projeto_externo_id == projeto_externo_id)
-    r = await db.execute(q.order_by(AcompanhamentoProjeto.data_avaliacao.desc()).offset(skip).limit(limit))
+    r = await db.execute(q.order_by(AcompanhamentoProjeto.data_resposta.desc()).offset(skip).limit(limit))
     return r.scalars().all()
 
 
