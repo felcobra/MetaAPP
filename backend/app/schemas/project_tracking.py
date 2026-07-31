@@ -1,5 +1,5 @@
-from datetime import datetime
-from typing import Any
+from datetime import datetime, date
+from typing import Any, Literal
 from pydantic import BaseModel, field_validator
 
 
@@ -8,9 +8,11 @@ from pydantic import BaseModel, field_validator
 class ProjetoExternoBase(BaseModel):
     nome: str
     descricao: str | None = None
-    status: str | None = None
-    data_inicio: datetime | None = None
-    data_fim: datetime | None = None
+    descricao_projeto: str | None = None
+    data_inicio: date | None = None
+    possui_orientador: bool | None = None
+    nome_orientador: str | None = None
+    status: Literal["ativo", "finalizado", "pausado"] | None = None
     external_source: str | None = None
     external_id: str | None = None
 
@@ -22,49 +24,68 @@ class ProjetoExternoCreate(ProjetoExternoBase):
 class ProjetoExternoUpdate(BaseModel):
     nome: str | None = None
     descricao: str | None = None
-    status: str | None = None
-    data_inicio: datetime | None = None
-    data_fim: datetime | None = None
+    descricao_projeto: str | None = None
+    data_inicio: date | None = None
+    possui_orientador: bool | None = None
+    nome_orientador: str | None = None
+    status: Literal["ativo", "finalizado", "pausado"] | None = None
 
 
 class ProjetoExternoRead(ProjetoExternoBase):
     id: int
-    created_at: datetime
-    updated_at: datetime
     model_config = {"from_attributes": True}
 
 
 # ---------- Acompanhamento Projeto ----------
 
-def _validate_nota(v: int | None, field_name: str) -> int | None:
-    if v is not None and not (1 <= v <= 5):
-        raise ValueError(f"{field_name} deve estar entre 1 e 5")
+def _validate_nota_1_5(v):
+    if v is not None and not (1 <= int(v) <= 5):
+        raise ValueError("Nota deve estar entre 1 e 5")
     return v
 
 
+PctFaixa = Literal["0-20%", "21-40%", "41-60%", "61-80%", "81-100%"]
+ModeloGerenciamento = Literal["Tradicional", "Agil", "Hibrido"]
+StatusCronograma = Literal["Dentro do prazo", "Com risco de atraso", "Atrasado", "Concluido"]
+
+_NOTAS_1_5 = (
+    "capacitacao_equipe", "eficacia_metodologia", "nivel_retrabalho",
+    "comunicacao_cliente", "suficiencia_orcamento", "cliente_percebeu_valor",
+    "variacao_escopo", "abertura_cliente", "satisfacao_cliente",
+    "suficiencia_orcamento_nota",
+)
+
+
 class AcompanhamentoBase(BaseModel):
-    projeto_externo_id: int
-    data_avaliacao: datetime
+    projeto_externo_id: int | None = None
+    contrato_id: int | None = None
+    data_resposta: date | None = None
+    modelo_gerenciamento: ModeloGerenciamento | None = None
+    pct_conclusao: PctFaixa | None = None
+    status_cronograma: StatusCronograma | None = None
+    motivos_atraso: str | None = None
     capacitacao_equipe: int | None = None
+    eficacia_metodologia: int | None = None
     nivel_retrabalho: int | None = None
     comunicacao_cliente: int | None = None
-    gestao_riscos: int | None = None
-    qualidade_entrega: int | None = None
-    satisfacao_geral: int | None = None
+    suficiencia_orcamento: int | None = None
+    orcamento_nao_necessario: bool | None = None
+    primeira_resposta: bool | None = None
+    cliente_percebeu_valor: int | None = None
+    pct_marcos_prazo: str | None = None
+    variacao_escopo: int | None = None
+    impacto_cliente: str | None = None
+    abertura_cliente: int | None = None
+    satisfacao_cliente: int | None = None
+    suficiencia_orcamento_nota: int | None = None
     dados_iniciais_adicionais: Any | None = None
     external_source: str | None = None
     external_id: str | None = None
 
-    @field_validator(
-        "capacitacao_equipe", "nivel_retrabalho", "comunicacao_cliente",
-        "gestao_riscos", "qualidade_entrega", "satisfacao_geral",
-        mode="before",
-    )
+    @field_validator(*_NOTAS_1_5, mode="before")
     @classmethod
     def validate_nota_range(cls, v):
-        if v is not None and not (1 <= int(v) <= 5):
-            raise ValueError("Nota deve estar entre 1 e 5")
-        return v
+        return _validate_nota_1_5(v)
 
 
 class AcompanhamentoCreate(AcompanhamentoBase):
@@ -72,90 +93,84 @@ class AcompanhamentoCreate(AcompanhamentoBase):
 
 
 class AcompanhamentoUpdate(BaseModel):
-    data_avaliacao: datetime | None = None
+    data_resposta: date | None = None
+    modelo_gerenciamento: ModeloGerenciamento | None = None
+    pct_conclusao: PctFaixa | None = None
+    status_cronograma: StatusCronograma | None = None
+    motivos_atraso: str | None = None
     capacitacao_equipe: int | None = None
+    eficacia_metodologia: int | None = None
     nivel_retrabalho: int | None = None
     comunicacao_cliente: int | None = None
-    gestao_riscos: int | None = None
-    qualidade_entrega: int | None = None
-    satisfacao_geral: int | None = None
+    suficiencia_orcamento: int | None = None
+    orcamento_nao_necessario: bool | None = None
+    cliente_percebeu_valor: int | None = None
+    pct_marcos_prazo: str | None = None
+    variacao_escopo: int | None = None
+    impacto_cliente: str | None = None
+    abertura_cliente: int | None = None
+    satisfacao_cliente: int | None = None
+    suficiencia_orcamento_nota: int | None = None
     dados_iniciais_adicionais: Any | None = None
 
 
 class AcompanhamentoRead(AcompanhamentoBase):
     id: int
-    created_at: datetime
-    updated_at: datetime
     model_config = {"from_attributes": True}
 
 
 # ---------- Satélites ----------
 
 class ImpedimentoCreate(BaseModel):
-    descricao: str
-    tipo: str | None = None
-    resolvido: bool = False
+    houve_impedimentos: bool
+    tipo_impedimento: str | None = None
 
 
 class ImpedimentoUpdate(BaseModel):
-    descricao: str | None = None
-    tipo: str | None = None
-    resolvido: bool | None = None
+    houve_impedimentos: bool | None = None
+    tipo_impedimento: str | None = None
 
 
 class ImpedimentoRead(BaseModel):
     id: int
     acompanhamento_id: int
-    descricao: str
-    tipo: str | None
-    resolvido: bool
-    created_at: datetime
+    houve_impedimentos: bool
+    tipo_impedimento: str | None
     model_config = {"from_attributes": True}
 
 
 class OrientadorCreate(BaseModel):
+    possui_orientador: bool
     nome_orientador: str | None = None
-    nota: int | None = None
-    comentario: str | None = None
+    efetividade_orientador: int | None = None
+    disponibilidade_orientador: int | None = None
 
-    @field_validator("nota", mode="before")
+    @field_validator("efetividade_orientador", "disponibilidade_orientador", mode="before")
     @classmethod
     def validate_nota(cls, v):
-        if v is not None and not (1 <= int(v) <= 5):
-            raise ValueError("Nota deve estar entre 1 e 5")
-        return v
+        return _validate_nota_1_5(v)
 
 
 class OrientadorRead(BaseModel):
     id: int
     acompanhamento_id: int
+    possui_orientador: bool
     nome_orientador: str | None
-    nota: int | None
-    comentario: str | None
-    created_at: datetime
+    efetividade_orientador: int | None
+    disponibilidade_orientador: int | None
     model_config = {"from_attributes": True}
 
 
 class SprintCreate(BaseModel):
-    numero_sprint: int | None = None
-    status: str | None = None
-    objetivo: str | None = None
-    concluido: bool = False
+    pct_story_points: PctFaixa | None = None
 
 
 class SprintUpdate(BaseModel):
-    numero_sprint: int | None = None
-    status: str | None = None
-    objetivo: str | None = None
-    concluido: bool | None = None
+    pct_story_points: PctFaixa | None = None
 
 
 class SprintRead(BaseModel):
     id: int
     acompanhamento_id: int
-    numero_sprint: int | None
-    status: str | None
-    objetivo: str | None
-    concluido: bool
-    created_at: datetime
+    pct_story_points: PctFaixa | None
     model_config = {"from_attributes": True}

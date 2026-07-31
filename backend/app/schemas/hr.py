@@ -1,19 +1,42 @@
-from datetime import datetime
+from datetime import datetime, date
 from pydantic import BaseModel, EmailStr
 
 
 # ---------- Estrutura Organizacional ----------
 
-class OrgCreate(BaseModel):
+class CargoCreate(BaseModel):
     nome: str
-    descricao: str | None = None
 
 
-class OrgRead(BaseModel):
+class CargoRead(BaseModel):
     id: int
     nome: str
-    descricao: str | None
-    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class CelulaCreate(BaseModel):
+    nome: str
+    sigla: str | None = None
+
+
+class CelulaRead(BaseModel):
+    id: int
+    nome: str
+    sigla: str | None
+    model_config = {"from_attributes": True}
+
+
+class CoordenacaoCreate(BaseModel):
+    celula_id: int | None = None
+    nome: str
+    sigla: str | None = None
+
+
+class CoordenacaoRead(BaseModel):
+    id: int
+    celula_id: int | None
+    nome: str
+    sigla: str | None
     model_config = {"from_attributes": True}
 
 
@@ -22,7 +45,6 @@ class OrgRead(BaseModel):
 class MembroBase(BaseModel):
     nome: str
     email: EmailStr
-    user_id: int | None = None
 
 
 class MembroCreate(MembroBase):
@@ -32,13 +54,32 @@ class MembroCreate(MembroBase):
 class MembroUpdate(BaseModel):
     nome: str | None = None
     email: EmailStr | None = None
-    user_id: int | None = None
 
 
 class MembroRead(MembroBase):
     id: int
-    created_at: datetime
-    updated_at: datetime
+    model_config = {"from_attributes": True}
+
+
+# ---------- Perfil estendido (exclusivo do MetaApp) ----------
+
+class MembroPerfilBase(BaseModel):
+    telefone: str | None = None
+    data_entrada: date | None = None
+    data_nascimento: date | None = None
+    foto_url: str | None = None
+    destaque_texto: str | None = None
+
+
+class MembroPerfilUpdate(MembroPerfilBase):
+    pass
+
+
+class MembroPerfilRead(MembroPerfilBase):
+    id: int
+    membro_id: int
+    user_id: int | None
+    ativo: bool
     model_config = {"from_attributes": True}
 
 
@@ -47,76 +88,100 @@ class MembroRead(MembroBase):
 class MembroCargoCreate(BaseModel):
     membro_id: int
     cargo_id: int
-    data_inicio: datetime | None = None
-    data_fim: datetime | None = None
-    ativo: bool = True
 
 
 class MembroCargoRead(BaseModel):
     id: int
     membro_id: int
     cargo_id: int
-    data_inicio: datetime | None
-    data_fim: datetime | None
-    ativo: bool
-    created_at: datetime
     model_config = {"from_attributes": True}
 
 
 class MembroCelulaCreate(BaseModel):
     membro_id: int
     celula_id: int
-    data_inicio: datetime | None = None
-    data_fim: datetime | None = None
-    ativo: bool = True
 
 
 class MembroCelulaRead(BaseModel):
     id: int
     membro_id: int
     celula_id: int
-    data_inicio: datetime | None
-    data_fim: datetime | None
-    ativo: bool
-    created_at: datetime
     model_config = {"from_attributes": True}
 
 
 class MembroCoordenacaoCreate(BaseModel):
     membro_id: int
     coordenacao_id: int
-    data_inicio: datetime | None = None
-    data_fim: datetime | None = None
-    ativo: bool = True
 
 
 class MembroCoordenacaoRead(BaseModel):
     id: int
     membro_id: int
     coordenacao_id: int
-    data_inicio: datetime | None
-    data_fim: datetime | None
-    ativo: bool
-    created_at: datetime
     model_config = {"from_attributes": True}
 
 
 class MembroProjetoCreate(BaseModel):
     membro_id: int
     projeto_externo_id: int
-    papel: str | None = None
-    data_inicio: datetime | None = None
-    data_fim: datetime | None = None
-    ativo: bool = True
+    coordenacao_id: int | None = None
+    cargo_id: int | None = None
+    data_entrada: date | None = None
+    data_saida: date | None = None
 
 
 class MembroProjetoRead(BaseModel):
     id: int
     membro_id: int
     projeto_externo_id: int
-    papel: str | None
-    data_inicio: datetime | None
-    data_fim: datetime | None
-    ativo: bool
-    created_at: datetime
+    coordenacao_id: int | None
+    cargo_id: int | None
+    data_entrada: date | None
+    data_saida: date | None
     model_config = {"from_attributes": True}
+
+
+# ---------- OrgChart hierárquico ----------
+
+class MembroSummary(BaseModel):
+    """Resumo de membro para exibição no OrgChart."""
+    id: int
+    nome: str
+    email: str
+    telefone: str | None = None
+    foto_url: str | None = None
+    model_config = {"from_attributes": True}
+
+
+class OrgNoRead(BaseModel):
+    """Nó do organograma — com filhos recursivos."""
+    id: int
+    titulo: str
+    membro: MembroSummary | None
+    filhos: list["OrgNoRead"] = []
+    model_config = {"from_attributes": True}
+
+
+OrgNoRead.model_rebuild()  # necessário para recursão Pydantic v2
+
+
+class OrgDivisaoRead(BaseModel):
+    """Divisão do organograma com árvore completa."""
+    id: str
+    label: str
+    root: OrgNoRead | None = None
+    model_config = {"from_attributes": True}
+
+
+class OrgNoCreate(BaseModel):
+    divisao_id: int
+    parent_id: int | None = None
+    membro_id: int | None = None
+    titulo: str
+    ordem: int = 0
+
+
+class OrgDivisaoCreate(BaseModel):
+    nome: str
+    slug: str
+    ordem: int = 0

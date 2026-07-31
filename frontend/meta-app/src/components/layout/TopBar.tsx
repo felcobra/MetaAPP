@@ -2,10 +2,11 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Menu, PanelLeftClose, Search } from "lucide-react";
+import { Menu, PanelLeftClose, Search, Bell, LogOut } from "lucide-react";
 import { currentUser } from "@/mocks/session";
 import { Avatar } from "@/components/ui/Avatar";
 import LogoMark from "../../../public/logo.png";
+import { useAuth } from "@/lib/auth-context";
 
 interface TopBarProps {
   pageTitle: string;
@@ -14,6 +15,13 @@ interface TopBarProps {
 }
 
 export function TopBar({ pageTitle, sidebarExpanded, onMenuClick }: TopBarProps) {
+  const { user, logout } = useAuth();
+
+  // Fallback enquanto o perfil carrega
+  const displayName = user?.name ?? "…";
+  const displayRole = user?.role ?? "";
+  const displayInitials = user?.initials ?? "?";
+
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-slate-200 bg-white px-4 sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
@@ -55,6 +63,17 @@ export function TopBar({ pageTitle, sidebarExpanded, onMenuClick }: TopBarProps)
             <p className="truncate text-xs text-slate-400">{currentUser.role}</p>
           </div>
         </Link>
+
+        {/* Botão de logout */}
+        <button
+          type="button"
+          onClick={() => void logout()}
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
+          aria-label="Sair da conta"
+          title="Sair"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
       </div>
     </header>
   );

@@ -13,6 +13,9 @@ from app.core.database import Base  # noqa: F401
 # Usuários do sistema (autenticação)
 from app.models.user import User  # noqa: F401
 
+# Tokens revogados (logout seguro)
+from app.models.auth import RevokedToken  # noqa: F401
+
 # Módulo Comercial
 from app.models.commercial import (  # noqa: F401
     DimLeadOrigem,
@@ -39,6 +42,7 @@ from app.models.financial import (  # noqa: F401
     Cliente,
     Contrato,
     ContratoPagamento,
+    Transacao,
 )
 
 # Módulo de RH e Gestão Interna
@@ -51,4 +55,19 @@ from app.models.hr import (  # noqa: F401
     MembroCelula,
     MembroCoordenacao,
     MembroProjeto,
+    MembroPerfilMetaapp,
+    OrgDivisao,
+    OrgNo,
+)
+
+# Módulo de Portfólio (Serviços por Coordenação)
+from app.models.service import Servico, ProjetoServico  # noqa: F401
+
+# Módulo de Formulários Dinâmicos (PAPE, Avaliação 360, etc.)
+from app.models.forms import (  # noqa: F401
+    FormTemplate,
+    FormStep,
+    FormField,
+    FormSubmission,
+    FormAnswer,
 )

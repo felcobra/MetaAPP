@@ -1,0 +1,49 @@
+# ============================================================
+# .gitignore — Meta App
+# ============================================================
+
+# Variáveis de ambiente (NUNCA commitar — contém senhas e SECRET_KEY)
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtualenv
+venv/
+env/
+.venv/
+ENV/
+
+# Alembic — não versionar o arquivo de config local
+# (alembic.ini pode ser commitado, mas não versões de migração geradas localmente se necessário)
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Uploads / arquivos gerados em runtime
+uploads/
+
+# Cobertura de testes
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Distribuição / build Python
+dist/
+build/
+*.egg-info/
