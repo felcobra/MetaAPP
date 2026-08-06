@@ -48,7 +48,19 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
     ]
+    # Origens extras para rede local/staging. Adicione via .env sem alterar código:
+    # EXTRA_ALLOWED_ORIGINS=["http://192.168.1.100:3000","https://staging.exemplo.com"]
+    EXTRA_ALLOWED_ORIGINS: List[str] = []
+
+    @property
+    def ALL_ALLOWED_ORIGINS(self) -> List[str]:
+        """Combina ALLOWED_ORIGINS + EXTRA_ALLOWED_ORIGINS (sem duplicatas)."""
+        combined = list(dict.fromkeys(self.ALLOWED_ORIGINS + self.EXTRA_ALLOWED_ORIGINS))
+        return combined
+
     # MED-04: métodos e headers explicitamente permitidos (em vez de allow all)
     ALLOWED_METHODS: List[str] = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     ALLOWED_HEADERS: List[str] = ["Content-Type", "Authorization"]
