@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Lock, Mail } from "lucide-react";
@@ -22,6 +22,15 @@ export function RegisterForm() {
   const { register } = useAuth();
 
   const [mostrarSenha, setMostrarSenha] = useState(false);
+
+  // Sem isto, um Enter dado antes de o React hidratar faz o navegador
+  // submeter o form nativamente. Como o metodo padrao do HTML e GET, e-mail
+  // e SENHA iriam parar na query string -- e portanto no historico do
+  // navegador, em logs de proxy e no cabecalho Referer. Em modo dev a janela
+  // e de varios segundos, porque o Next compila a pagina sob demanda.
+  const [hidratado, setHidratado] = useState(false);
+  useEffect(() => setHidratado(true), []);
+
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -63,7 +72,7 @@ export function RegisterForm() {
         Use o mesmo e-mail corporativo que a Meta tem no seu cadastro de membro.
       </p>
 
-      <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+      <form className="mt-8 space-y-5" method="post" onSubmit={handleSubmit}>
         <div>
           <Label htmlFor="email">E-mail corporativo</Label>
           <Input
@@ -130,7 +139,13 @@ export function RegisterForm() {
           </div>
         )}
 
-        <Button type="submit" fullWidth size="md" className="h-12" disabled={enviando}>
+        <Button
+          type="submit"
+          fullWidth
+          size="md"
+          className="h-12"
+          disabled={enviando || !hidratado}
+        >
           {enviando ? "Criando conta…" : "Criar conta →"}
         </Button>
       </form>
