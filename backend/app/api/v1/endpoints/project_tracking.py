@@ -10,11 +10,13 @@ v2 — Correções:
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, desc
 from typing import List, Optional
 
 from app.core.database import get_db
 from app.api.deps import get_current_user
+from app.models.financial import Contrato
+from app.models.hr import Cargo, Coordenacao, Membro, MembroProjeto
 from app.models.project_tracking import (
     ProjetoExterno, AcompanhamentoProjeto,
     AcompImpedimento, AcompOrientador, AcompSprint,
@@ -34,6 +36,81 @@ router = APIRouter()
 # NOTA: prefix do router é /projetos, então os paths abaixo são relativos a ele.
 # Ex: GET / → GET /api/v1/projetos/
 #     GET /{id} → GET /api/v1/projetos/{id}
+
+_PCT_FAIXA_MEIO = {
+    "0-20%": 10, "21-40%": 30, "41-60%": 50, "61-80%": 70, "81-100%": 90,
+}
+
+_STATUS_VISUAL = {
+    "Dentro do prazo": "no-prazo",
+    "Com risco de atraso": "atencao",
+    "Atrasado": "atrasado",
+}
+
+
+# Declarado antes de /{projeto_id}: o FastAPI casa as rotas na ordem em que
+# são registradas, e /{projeto_id} capturaria "board" como se fosse um id.
+@router.get("/board", summary="Projetos com cliente, gerente, área e progresso (quadro)")
+async def get_board(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Alimenta o quadro de Projetos Externos.
+
+    Difere de /dashboard/active-projects por trazer também os finalizados (o
+    quadro tem filtro próprio) e a área responsável.
+    """
+    projetos = (await db.execute(
+        select(ProjetoExterno).order_by(desc(ProjetoExterno.id))
+    )).scalars().all()
+
+    resultado = []
+    for p in projetos:
+        ultimo = (await db.execute(
+            select(AcompanhamentoProjeto.pct_conclusao, AcompanhamentoProjeto.status_cronograma)
+            .where(AcompanhamentoProjeto.projeto_externo_id == p.id)
+            .order_by(desc(AcompanhamentoProjeto.data_resposta))
+            .limit(1)
+        )).first()
+        pct, status_cronograma = ultimo if ultimo else (None, None)
+
+        # Gerente e área saem da mesma alocação: quem responde pelo projeto e
+        # de qual coordenação essa pessoa é. Cargos de gerência vêm primeiro.
+        alocacao = (await db.execute(
+            select(Membro.nome, Coordenacao.nome)
+            .join(MembroProjeto, MembroProjeto.membro_id == Membro.id)
+            .outerjoin(Cargo, Cargo.id == MembroProjeto.cargo_id)
+            .outerjoin(Coordenacao, Coordenacao.id == MembroProjeto.coordenacao_id)
+            .where(
+                MembroProjeto.projeto_externo_id == p.id,
+                MembroProjeto.data_saida.is_(None),
+            )
+            .order_by(Cargo.nome.like("Gerente%").desc(), Membro.id)
+            .limit(1)
+        )).first()
+        gerente, area = alocacao if alocacao else (None, None)
+
+        contrato = (await db.execute(
+            select(Contrato)
+            .join(Contrato.cliente)
+            .where(Contrato.projeto_externo_id == p.id)
+            .limit(1)
+        )).scalar_one_or_none()
+        cliente = contrato.cliente.nome if contrato and contrato.cliente else None
+
+        resultado.append({
+            "id": p.id,
+            "nome": p.nome,
+            "cliente": cliente or p.nome,
+            "area": area or "—",
+            "gerente": gerente or "—",
+            "status": _STATUS_VISUAL.get(status_cronograma, "sem-dados"),
+            "status_projeto": p.status,
+            "progresso": _PCT_FAIXA_MEIO.get(pct, 0),
+        })
+
+    return resultado
+
 
 @router.get("/", response_model=List[ProjetoExternoRead], summary="Listar projetos")
 async def list_projetos(

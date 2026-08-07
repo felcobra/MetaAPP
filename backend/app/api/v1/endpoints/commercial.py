@@ -11,13 +11,15 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, desc
 
 from app.core.database import get_db
 from app.api.deps import get_current_user, require_admin, require_director_or_admin
 from app.models.commercial import (
     DimLeadOrigem, DimMotivoPerdida, Lead, Oportunidade, OportunidadePhaseHistory
 )
+from app.models.financial import Cliente
+from app.models.hr import Coordenacao
 from app.schemas.commercial import (
     DimBaseRead, DimCreate,
     LeadRead, LeadCreate, LeadUpdate,
@@ -139,6 +141,142 @@ async def delete_lead(
 
 
 # ========== Oportunidades ==========
+
+@router.get("/resumo", summary="Agregados da tela Comercial (funil, origens, motivos, resumo)")
+async def get_resumo_comercial(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Tudo que os cards da tela Comercial precisam, numa chamada só.
+
+    Sem recorte de período: o filtro da tela ainda não existe, e `criado_em` é
+    nullable numa parte relevante das oportunidades importadas do Pipefy, então
+    filtrar por data esconderia registros em vez de recortá-los. Os números
+    são, portanto, do histórico inteiro.
+    """
+    # Funil — oportunidades abertas, agrupadas pela fase em que pararam.
+    funil_rows = await db.execute(
+        select(Oportunidade.fase_atual_nome, func.count(Oportunidade.id))
+        .where(
+            Oportunidade.status_terminal == "ativo",
+            Oportunidade.fase_atual_nome.isnot(None),
+        )
+        .group_by(Oportunidade.fase_atual_nome)
+        .order_by(desc(func.count(Oportunidade.id)))
+    )
+    funil = [{"label": nome, "value": total} for nome, total in funil_rows]
+
+    # Desfechos por status_terminal.
+    status_rows = await db.execute(
+        select(Oportunidade.status_terminal, func.count(Oportunidade.id))
+        .group_by(Oportunidade.status_terminal)
+    )
+    por_status = {s: c for s, c in status_rows}
+
+    valor_ganho = (await db.execute(
+        select(func.sum(Oportunidade.valor_fechado))
+        .where(Oportunidade.status_terminal == "fechado")
+    )).scalar() or 0
+
+    # Origens e motivos de perda: a contagem sai das oportunidades, não das
+    # tabelas de dimensão — dimensão sem oportunidade vinculada não vira barra.
+    origem_rows = await db.execute(
+        select(DimLeadOrigem.canonical_value, func.count(Oportunidade.id))
+        .join(Oportunidade, Oportunidade.origem_id == DimLeadOrigem.id)
+        .group_by(DimLeadOrigem.canonical_value)
+        .order_by(desc(func.count(Oportunidade.id)))
+        .limit(8)
+    )
+    origens = [{"label": nome or "Sem origem", "value": total} for nome, total in origem_rows]
+
+    motivo_rows = await db.execute(
+        select(DimMotivoPerdida.canonical_value, func.count(Oportunidade.id))
+        .join(Oportunidade, Oportunidade.motivo_perda_id == DimMotivoPerdida.id)
+        .group_by(DimMotivoPerdida.canonical_value)
+        .order_by(desc(func.count(Oportunidade.id)))
+        .limit(15)
+    )
+    motivos = [{"label": nome or "Não informado", "value": total} for nome, total in motivo_rows]
+
+    total_clientes = (await db.execute(select(func.count(Cliente.id)))).scalar() or 0
+    total_op = sum(por_status.values())
+    fechadas = por_status.get("fechado", 0)
+
+    return {
+        "funil": funil,
+        "desfechos": {
+            "ganhos": fechadas,
+            # O enum não tem um estado "perdido": desistido (o lead saiu) e
+            # recusado (a Meta não seguiu) são as duas formas de perder.
+            "perdidos": por_status.get("desistido", 0) + por_status.get("recusado", 0),
+            "postergados": por_status.get("postergado", 0),
+            "valor_ganho": float(valor_ganho),
+        },
+        "origens": origens,
+        "motivos_perda": motivos,
+        "resumo": {
+            "pipeline_aberto": por_status.get("ativo", 0),
+            # Conversão sobre o total de oportunidades já registradas.
+            "taxa_conversao_pct": round(fechadas / total_op * 100) if total_op else 0,
+            "clientes": total_clientes,
+            "valor_ganho": float(valor_ganho),
+        },
+    }
+
+
+@router.get("/tabela-oportunidades", summary="Oportunidades com nomes resolvidos (tabela)")
+async def get_tabela_oportunidades(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Como /oportunidades, mas com lead, origem e coordenação já resolvidos em
+    nome — a tabela mostra texto, e resolver isso no cliente exigiria uma
+    chamada por linha.
+    """
+    total = (await db.execute(select(func.count(Oportunidade.id)))).scalar() or 0
+    total_pages = max(1, -(-total // page_size))
+    skip = (page - 1) * page_size
+
+    rows = await db.execute(
+        select(
+            Oportunidade.id,
+            Oportunidade.criado_em,
+            Oportunidade.status_terminal,
+            Lead.nome,
+            DimLeadOrigem.canonical_value,
+            Coordenacao.sigla,
+        )
+        .outerjoin(Lead, Lead.id == Oportunidade.lead_id)
+        .outerjoin(DimLeadOrigem, DimLeadOrigem.id == Oportunidade.origem_id)
+        .outerjoin(Coordenacao, Coordenacao.id == Oportunidade.coordenacao_id)
+        .order_by(desc(Oportunidade.id))
+        .offset(skip)
+        .limit(page_size)
+    )
+
+    items = [
+        {
+            "id": op_id,
+            "criado_em": criado.isoformat() if criado else None,
+            "status": status_terminal,
+            "contato": nome or "—",
+            "origem": origem or "—",
+            "coordenacao": sigla or "—",
+        }
+        for op_id, criado, status_terminal, nome, origem, sigla in rows
+    ]
+
+    return {
+        "items": items,
+        "total": total,
+        "total_pages": total_pages,
+        "current_page": page,
+        "page_from": skip + 1 if total else 0,
+        "page_to": min(skip + page_size, total),
+    }
+
 
 @router.get("/oportunidades", response_model=PaginatedOportunidades)
 async def list_oportunidades(

@@ -7,22 +7,38 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Tabs } from "@/components/ui/Tabs";
 
-const statusTone: Record<OpportunityStatus, "info" | "danger" | "success" | "neutral"> = {
+const statusTone: Record<OpportunityStatus, "info" | "danger" | "success" | "neutral" | "warning"> = {
   Ativo: "info",
   Desistido: "danger",
   Recusado: "neutral",
   Ganho: "success",
+  Postergado: "warning",
 };
 
 interface OpportunitiesTableProps {
   opportunities: Opportunity[];
   pagination: { from: number; to: number; total: number; totalPages: number; currentPage: number };
+  onPageChange: (page: number) => void;
+  carregando?: boolean;
 }
 
-export function OpportunitiesTable({ opportunities, pagination }: OpportunitiesTableProps) {
+export function OpportunitiesTable({
+  opportunities,
+  pagination,
+  onPageChange,
+  carregando,
+}: OpportunitiesTableProps) {
   const [view, setView] = useState("oportunidades");
-  const [page, setPage] = useState(pagination.currentPage);
-  const pageNumbers = [1, 2, 3, 4, 5];
+  const page = pagination.currentPage;
+
+  // A pagina atual sempre aparece na régua, junto das duas vizinhas de cada
+  // lado. Antes eram os numeros 1..5 fixos, entao a partir da pagina 6 nenhum
+  // botao correspondia a pagina em que se estava.
+  const inicio = Math.max(1, Math.min(page - 2, pagination.totalPages - 4));
+  const pageNumbers = Array.from(
+    { length: Math.min(5, pagination.totalPages) },
+    (_, i) => inicio + i,
+  ).filter((n) => n <= pagination.totalPages);
 
   return (
     <section className="@container min-w-0">
@@ -80,17 +96,23 @@ export function OpportunitiesTable({ opportunities, pagination }: OpportunitiesT
         )}
 
         <div className="flex min-w-0 flex-col items-start justify-between gap-3 p-4 text-[13px] font-bold text-slate-500 @2xl:flex-row @2xl:items-center @4xl:p-5 @4xl:text-base">
-          <span className="min-w-0 break-words">Exibindo {pagination.from} a {pagination.to} de {pagination.total} (total: {pagination.total} no periodo).</span>
+          <span className="min-w-0 break-words">
+            {carregando
+              ? "Carregando..."
+              : `Exibindo ${pagination.from} a ${pagination.to} de ${pagination.total}.`}
+          </span>
           <div className="flex shrink-0 items-center gap-3 @4xl:gap-4">
-            <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} className="text-slate-400 hover:text-slate-700 disabled:opacity-40" disabled={page === 1} aria-label="Pagina anterior">
+            <button type="button" onClick={() => onPageChange(Math.max(1, page - 1))} className="text-slate-400 hover:text-slate-700 disabled:opacity-40" disabled={page === 1} aria-label="Pagina anterior">
               <ChevronLeft className="h-4 w-4" />
             </button>
             {pageNumbers.map((number) => (
-              <button key={number} type="button" onClick={() => setPage(number)} className={page === number ? "text-slate-950" : "text-slate-500 hover:text-slate-900"}>{number}</button>
+              <button key={number} type="button" onClick={() => onPageChange(number)} className={page === number ? "text-slate-950" : "text-slate-500 hover:text-slate-900"}>{number}</button>
             ))}
-            <span className="text-slate-400">...</span>
-            <button type="button" onClick={() => setPage(pagination.totalPages)} className={page === pagination.totalPages ? "text-slate-950" : "text-slate-500 hover:text-slate-900"}>{pagination.totalPages}</button>
-            <button type="button" onClick={() => setPage((current) => Math.min(pagination.totalPages, current + 1))} className="text-slate-400 hover:text-slate-700 disabled:opacity-40" disabled={page === pagination.totalPages} aria-label="Proxima pagina">
+            {pageNumbers[pageNumbers.length - 1] < pagination.totalPages ? (
+              <span className="text-slate-400">...</span>
+            ) : null}
+            <button type="button" onClick={() => onPageChange(pagination.totalPages)} className={page === pagination.totalPages ? "text-slate-950" : "text-slate-500 hover:text-slate-900"}>{pagination.totalPages}</button>
+            <button type="button" onClick={() => onPageChange(Math.min(pagination.totalPages, page + 1))} className="text-slate-400 hover:text-slate-700 disabled:opacity-40" disabled={page === pagination.totalPages} aria-label="Proxima pagina">
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>

@@ -12,6 +12,9 @@ const filterOptions: { id: ExternalProjectFilter; label: string }[] = [
   { id: "no-prazo", label: "No prazo" },
   { id: "atencao", label: "Atenção" },
   { id: "atrasado", label: "Atrasado" },
+  // Projeto sem PAPE respondido não cai em nenhum dos três: sem esta aba,
+  // ele só apareceria em "Todos".
+  { id: "sem-dados", label: "Sem PAPE" },
 ];
 
 export function ExternalProjectsBoard({ projects }: { projects: ExternalProject[] }) {
