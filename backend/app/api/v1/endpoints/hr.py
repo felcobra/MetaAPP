@@ -473,14 +473,26 @@ async def get_orgchart(
 ):
     """Retorna a árvore hierárquica completa do organograma no formato OrgDivision[]
     que o frontend consome. Carrega divisões ordenadas com nós raiz eager-loaded.
+
+    O eager-load carrega `membro` em CADA nível (raiz e cada `filhos`), não só
+    `filhos` em cadeia — `_build_tree` lê `no.membro` em todo nó que visita, e
+    sem isso o acesso disparava um lazy-load fora do greenlet async
+    (AsyncSession não permite I/O síncrono implícito), derrubando a rota com
+    `MissingGreenlet` sempre que um nó tinha `membro_id` preenchido.
     """
     r = await db.execute(
         select(OrgDivisao)
         .options(
-            selectinload(OrgDivisao.nos)
-            .selectinload(OrgNo.filhos)
-            .selectinload(OrgNo.filhos)
-            .selectinload(OrgNo.filhos)  # 3 níveis de profundidade
+            selectinload(OrgDivisao.nos).options(
+                selectinload(OrgNo.membro),
+                selectinload(OrgNo.filhos).options(
+                    selectinload(OrgNo.membro),
+                    selectinload(OrgNo.filhos).options(
+                        selectinload(OrgNo.membro),
+                        selectinload(OrgNo.filhos).selectinload(OrgNo.membro),  # 3 níveis de profundidade
+                    ),
+                ),
+            )
         )
         .order_by(OrgDivisao.ordem)
     )
