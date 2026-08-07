@@ -1,8 +1,9 @@
 import { ArrowUpRight } from "lucide-react";
-import { salesFunnel } from "@/mocks/home";
 import { Card, CardEyebrow } from "@/components/ui/Card";
+import { VazioCard } from "@/components/ui/AsyncState";
+import type { SalesFunnelStage } from "@/types/home";
 
-export function SalesFunnelCard() {
+export function SalesFunnelCard({ estagios }: { estagios: SalesFunnelStage[] }) {
   return (
     <Card className="flex h-full flex-col">
       <div className="flex items-start justify-between">
@@ -14,7 +15,10 @@ export function SalesFunnelCard() {
       </div>
 
       <div className="mt-6 flex flex-1 flex-col justify-center gap-3">
-        {salesFunnel.map((stage) => (
+        {estagios.length === 0 ? (
+          <VazioCard mensagem="Nenhum lead registrado ainda." />
+        ) : null}
+        {estagios.map((stage) => (
           <div key={stage.label} className="w-full">
             <div
               className="flex h-11 items-center justify-between rounded-lg brand-gradient px-4 text-sm font-semibold text-white"

@@ -1,15 +1,7 @@
 import type { Metadata } from "next";
-import { CalendarDays } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { DashboardTabs } from "@/components/dashboard/DashboardTabs";
-import {
-  activeProjectRows,
-  deliveriesByMonth,
-  engagementByArea,
-  kpiCards,
-  proposalFunnel,
-} from "@/mocks/dashboard";
+import { DashboardsContent } from "@/components/dashboard/DashboardsContent";
 
 export const metadata: Metadata = {
   title: "Dashboards | Meta App",
@@ -18,24 +10,15 @@ export const metadata: Metadata = {
 export default function DashboardsPage() {
   return (
     <AppShell pageTitle="Dashboards">
+      {/* A descrição dizia "Atualizado há 4 minutos" e o filtro mostrava
+          "Junho · 2026", ambos fixos no código. Não há cache com timestamp
+          nem seletor de período implementado, então os dois saíram. */}
       <PageHeader
         eyebrow="DASHBOARDS"
         title="Visão geral da Meta"
-        description="Indicadores combinados de projetos, pessoas e operação. Atualizado há 4 minutos."
-        actions={
-          <span className="flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-600">
-            <CalendarDays className="h-4 w-4 text-slate-400" />
-            Junho · 2026
-          </span>
-        }
+        description="Indicadores combinados de projetos, pessoas e operação."
       />
-      <DashboardTabs
-        kpiCards={kpiCards}
-        deliveries={deliveriesByMonth}
-        engagement={engagementByArea}
-        proposalFunnel={proposalFunnel}
-        activeProjects={activeProjectRows}
-      />
+      <DashboardsContent />
     </AppShell>
   );
 }

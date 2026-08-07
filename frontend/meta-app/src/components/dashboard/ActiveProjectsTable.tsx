@@ -9,6 +9,7 @@ export function ActiveProjectsTable({ rows }: { rows: ActiveProjectRow[] }) {
         <thead>
           <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
             <th className="py-3 pr-4 font-semibold">Projeto</th>
+            <th className="py-3 pr-4 font-semibold">Cliente</th>
             <th className="py-3 pr-4 font-semibold">Gerente</th>
             <th className="py-3 pr-4 font-semibold">Status</th>
             <th className="py-3 font-semibold">Progresso</th>
@@ -18,6 +19,7 @@ export function ActiveProjectsTable({ rows }: { rows: ActiveProjectRow[] }) {
           {rows.map((row) => (
             <tr key={row.project} className="border-b border-slate-100 last:border-0">
               <td className="py-4 pr-4 font-semibold text-slate-800">{row.project}</td>
+              <td className="py-4 pr-4 text-slate-600">{row.client}</td>
               <td className="py-4 pr-4 text-slate-600">{row.manager}</td>
               <td className="py-4 pr-4">
                 <ProjectStatusBadge status={row.status} />
