@@ -39,11 +39,15 @@ _PCT_FAIXA_MEIO = {
 }
 
 # acompanhamento_projeto.status_cronograma guarda o texto que o consultor
-# escolheu no PAPE. Traduzido aqui para os três estados que a tabela colore.
+# escolheu no PAPE. Traduzido aqui para os estados que a tabela colore.
+# Os quatro valores foram conferidos contra o enum real do banco — faltar um
+# deles aqui faria o projeto cair no fallback "sem-dados", ou seja, um projeto
+# concluído apareceria como "sem PAPE respondido".
 _STATUS_VISUAL = {
     "Dentro do prazo": "no-prazo",
     "Com risco de atraso": "atencao",
     "Atrasado": "atrasado",
+    "Concluido": "concluido",
 }
 
 

@@ -41,10 +41,12 @@ _PCT_FAIXA_MEIO = {
     "0-20%": 10, "21-40%": 30, "41-60%": 50, "61-80%": 70, "81-100%": 90,
 }
 
+# Os quatro valores do enum real de acompanhamento_projeto.status_cronograma.
 _STATUS_VISUAL = {
     "Dentro do prazo": "no-prazo",
     "Com risco de atraso": "atencao",
     "Atrasado": "atrasado",
+    "Concluido": "concluido",
 }
 
 

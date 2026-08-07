@@ -8,6 +8,7 @@ const statusConfig: Record<
   "no-prazo": { label: "No prazo", tone: "success" },
   atencao: { label: "Atenção", tone: "warning" },
   atrasado: { label: "Atrasado", tone: "danger" },
+  concluido: { label: "Concluído", tone: "success" },
   // Projeto sem PAPE respondido: não dá para afirmar nada sobre o prazo.
   "sem-dados": { label: "Sem PAPE", tone: "neutral" },
 };
@@ -21,6 +22,7 @@ const progressBarColor: Record<ProjectStatus, string> = {
   "no-prazo": "bg-emerald-500",
   atencao: "bg-amber-400",
   atrasado: "bg-red-500",
+  concluido: "bg-blue-500",
   "sem-dados": "bg-slate-300",
 };
 

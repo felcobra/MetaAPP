@@ -32,9 +32,15 @@ export interface ProposalFunnelStage {
   percentage: number;
 }
 
-/** "sem-dados" cobre projeto sem nenhum acompanhamento respondido — comum em
+/** Espelha o enum acompanhamento_projeto.status_cronograma do banco, mais
+ * "sem-dados" para projeto sem nenhum acompanhamento respondido — comum em
  * projeto recém-criado, e diferente de estar atrasado. */
-export type ProjectStatus = "no-prazo" | "atencao" | "atrasado" | "sem-dados";
+export type ProjectStatus =
+  | "no-prazo"
+  | "atencao"
+  | "atrasado"
+  | "concluido"
+  | "sem-dados";
 
 export interface ActiveProjectRow {
   project: string;
