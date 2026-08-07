@@ -5,7 +5,10 @@
 # Variáveis de ambiente (NUNCA commitar — contém senhas e SECRET_KEY)
 .env
 .env.*
+# Templates sem segredo: o "!" precisa ser explicito por arquivo, senao o
+# padrao .env.* acima os engole.
 !.env.example
+!.env.production.example
 
 # Python
 __pycache__/

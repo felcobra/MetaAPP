@@ -1,0 +1,26 @@
+# Sobe o backend do Meta App na VPS, na mesma rede Docker do banco.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Pré-requisito: descobrir o nome da rede em que o container do banco vive:
+#   docker inspect banco_de_dados_bd -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}'
+# e colocar esse nome em `networks.banco.name` lá embaixo.
+services:
+  metaapp-api:
+    build: .
+    container_name: metaapp_api
+    restart: unless-stopped
+    env_file: .env
+    # Publica só em 127.0.0.1: o proxy reverso da VPS (nginx/traefik) fala com
+    # a API por localhost. Sem isso a 8000 ficaria aberta pra internet.
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks:
+      - banco
+
+networks:
+  banco:
+    # Rede já existente, criada pelo stack do banco — não criamos outra,
+    # senão o container não enxerga o host `banco_de_dados_bd`.
+    external: true
+    name: PREENCHER_NOME_DA_REDE
