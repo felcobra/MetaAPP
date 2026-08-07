@@ -13,8 +13,8 @@ import {
 
 export function FormsContent() {
   const { data, erro, carregando } = useApiVarios<[TarefaApi[], HistoricoApi[]]>([
-    "/forms/minhas-tarefas",
-    "/forms/historico",
+    "/formularios/minhas-tarefas",
+    "/formularios/historico",
   ]);
 
   if (erro) return <ErroCard erro={erro} titulo="Não foi possível carregar os formulários" />;

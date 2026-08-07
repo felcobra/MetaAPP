@@ -12,7 +12,7 @@ export function PapeContent() {
   const templateId = useSearchParams().get("template") ?? "1";
 
   const { data, erro, carregando } = useApi<TemplateComStepsApi>(
-    `/forms/templates/${templateId}`,
+    `/formularios/templates/${templateId}`,
   );
 
   if (erro) return <ErroCard erro={erro} titulo="Não foi possível carregar o formulário" />;

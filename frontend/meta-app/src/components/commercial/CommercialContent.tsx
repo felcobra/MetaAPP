@@ -32,9 +32,9 @@ function dataBR(iso: string | null): string {
 export function CommercialContent() {
   const [pagina, setPagina] = useState(1);
 
-  const resumoState = useApiVarios<[ResumoComercialApi]>(["/commercial/resumo"]);
+  const resumoState = useApiVarios<[ResumoComercialApi]>(["/comercial/resumo"]);
   const tabelaState = useApi<TabelaOportunidadesApi>(
-    `/commercial/tabela-oportunidades?page=${pagina}&page_size=${PAGE_SIZE}`,
+    `/comercial/tabela-oportunidades?page=${pagina}&page_size=${PAGE_SIZE}`,
   );
 
   if (resumoState.erro) {

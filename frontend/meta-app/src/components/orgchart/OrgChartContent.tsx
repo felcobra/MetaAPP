@@ -6,7 +6,7 @@ import { ErroCard, Skeleton } from "@/components/ui/AsyncState";
 import { normalizarDivisoes, type OrgDivisaoApi } from "@/types/orgchart";
 
 export function OrgChartContent() {
-  const { data, erro, carregando } = useApi<OrgDivisaoApi[]>("/hr/orgchart");
+  const { data, erro, carregando } = useApi<OrgDivisaoApi[]>("/rh/orgchart");
 
   if (erro) return <ErroCard erro={erro} titulo="Não foi possível carregar o organograma" />;
 
