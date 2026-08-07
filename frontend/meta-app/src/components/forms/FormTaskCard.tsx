@@ -9,7 +9,6 @@ export function FormTaskCard({ task }: { task: FormTask }) {
     <Card className="flex h-full min-w-0 flex-col">
       <div className="flex min-w-0 items-center justify-between gap-3">
         <Badge tone="neutral">{task.frequency}</Badge>
-        <span className="shrink-0 text-xs font-medium text-amber-600">Prazo: {task.dueLabel}</span>
       </div>
 
       <h3 className="mt-4 line-clamp-2 min-w-0 text-2xl font-bold leading-tight text-slate-900">{task.title}</h3>
@@ -41,7 +40,7 @@ export function FormTaskCard({ task }: { task: FormTask }) {
       )}
 
       <Link
-        href={task.id === "pape" ? "/pape" : "/forms"}
+        href={`/pape?template=${task.templateId}`}
         className="brand-gradient mt-5 flex min-h-12 items-center justify-center rounded-xl px-4 text-center text-sm font-semibold text-white transition hover:brightness-105"
       >
         <span className="truncate">{task.ctaLabel} {"->"}</span>

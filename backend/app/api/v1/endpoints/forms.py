@@ -17,6 +17,7 @@ from app.core.database import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
 from app.models.hr import Membro, MembroPerfilMetaapp
+from app.models.project_tracking import ProjetoExterno
 from app.models.forms import (
     FormTemplate, FormStep, FormField, FormSubmission, FormAnswer,
 )
@@ -140,6 +141,92 @@ async def add_field(
 
 
 # ========== Submissões ==========
+
+@router.get("/minhas-tarefas", summary="Formulários ativos com o progresso do usuário logado")
+async def get_minhas_tarefas(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Cada template ativo com a submissão mais recente do próprio usuário.
+
+    Quem não tem membro vinculado recebe os templates com status "pendente" —
+    a lista de formulários existentes não depende de estar alocado.
+    """
+    templates = (await db.execute(
+        select(FormTemplate)
+        .where(FormTemplate.ativo == True)
+        .order_by(FormTemplate.id)
+    )).scalars().all()
+
+    membro = await _get_membro_by_user(db, current_user.id)
+
+    # Uma consulta para todas as submissões do membro; a mais recente de cada
+    # template vence. Evita um SELECT por template.
+    por_template: dict[int, FormSubmission] = {}
+    if membro:
+        submissoes = (await db.execute(
+            select(FormSubmission)
+            .where(FormSubmission.membro_id == membro.id)
+            .order_by(FormSubmission.created_at.desc())
+        )).scalars().all()
+        for s in submissoes:
+            por_template.setdefault(s.template_id, s)
+
+    total_steps = dict((await db.execute(
+        select(FormStep.template_id, func.count(FormStep.id)).group_by(FormStep.template_id)
+    )).all())
+
+    return [
+        {
+            "id": t.id,
+            "titulo": t.titulo,
+            "subtitulo": t.subtitulo,
+            "descricao": t.descricao,
+            "frequencia": t.frequencia,
+            "duracao_estimada": t.duracao_estimada,
+            "publico_alvo": t.publico_alvo,
+            "total_steps": total_steps.get(t.id, 0),
+            "status": por_template[t.id].status if t.id in por_template else "pendente",
+            "progresso": por_template[t.id].progresso if t.id in por_template else 0,
+            "submissao_id": por_template[t.id].id if t.id in por_template else None,
+        }
+        for t in templates
+    ]
+
+
+@router.get("/historico", summary="Submissões concluídas do usuário logado")
+async def get_historico(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Formulários que o usuário já finalizou, do mais recente para o mais antigo."""
+    membro = await _get_membro_by_user(db, current_user.id)
+    if not membro:
+        return []
+
+    rows = await db.execute(
+        select(FormSubmission, FormTemplate.titulo, ProjetoExterno.nome)
+        .join(FormTemplate, FormTemplate.id == FormSubmission.template_id)
+        .outerjoin(ProjetoExterno, ProjetoExterno.id == FormSubmission.projeto_externo_id)
+        .where(
+            FormSubmission.membro_id == membro.id,
+            FormSubmission.status == "concluido",
+        )
+        .order_by(FormSubmission.data_submissao.desc())
+        .limit(20)
+    )
+
+    return [
+        {
+            "id": s.id,
+            "titulo": titulo,
+            "ciclo": s.ciclo,
+            "projeto": projeto,
+            "data_submissao": s.data_submissao.isoformat() if s.data_submissao else None,
+        }
+        for s, titulo, projeto in rows
+    ]
+
 
 @router.get("/submissoes", response_model=List[FormSubmissionRead], summary="Submissões do usuário atual")
 async def list_submissoes(

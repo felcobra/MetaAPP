@@ -6,7 +6,17 @@ Serviços do mesmo projeto se enxergam pelo nome do container na rede interna �
 na internet. Nenhum passo aqui roda na máquina de ninguém: tudo acontece no
 EasyPanel.
 
-## 1. Criar o serviço
+> **O serviço já existe.** `frontend/meta-app/.env.local` aponta para
+> `https://banco-de-dados-metaapp-backend.d86ysa.easypanel.host/api/v1`, e essa
+> URL responde `{"status":"ok","app":"Meta App","version":"2.0.0"}` — ou seja,
+> projeto `banco-de-dados`, serviço `metaapp-backend`, no ar. A seção 1 abaixo
+> serve para recriar do zero ou conferir a configuração; o que falta de fato é
+> a seção 4 (migration) em diante.
+>
+> `/api/v1/docs` responder 404 é o esperado: `main.py` desativa Swagger, ReDoc
+> e OpenAPI quando `DEBUG=false`, para não expor o schema da API.
+
+## 1. Criar o serviço (ou conferir o existente)
 
 No projeto onde já vive o `banco_de_dados_bd`: **+ Service → App**.
 
