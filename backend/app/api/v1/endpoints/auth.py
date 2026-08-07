@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.core.database import get_db
+from app.api.deps import get_current_user
 from app.core.security import (
     verify_password,
     create_access_token,
@@ -30,7 +31,10 @@ from app.core.security import (
 from app.models.user import User
 from app.models.auth import RevokedToken
 from app.models.hr import Membro, MembroPerfilMetaapp
-from app.schemas.auth import Token, RefreshTokenRequest, LogoutRequest, RegisterRequest
+from app.schemas.auth import (
+    Token, RefreshTokenRequest, LogoutRequest, RegisterRequest,
+    ChangePasswordRequest,
+)
 
 import logging
 
@@ -41,6 +45,38 @@ limiter = Limiter(key_func=get_remote_address)
 # MED-03: hash dummy pré-computado para garantir tempo de resposta constante
 # no login, mesmo quando o e-mail não existe no banco (evita user enumeration).
 _DUMMY_HASH: str = get_password_hash("__meta_timing_protection_dummy_2026__")
+
+
+@router.post("/change-password", status_code=204,
+             summary="Trocar a própria senha (requer a senha atual)")
+@limiter.limit("5/minute")
+async def change_password(
+    request: Request,
+    body: ChangePasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Troca a senha de quem está logado.
+
+    Exige a senha atual: sem isso, um token roubado viraria posse permanente
+    da conta, já que o atacante trocaria a senha e o dono perderia o acesso.
+    """
+    if not verify_password(body.senha_atual, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Senha atual incorreta.",
+        )
+
+    if verify_password(body.senha_nova, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A senha nova precisa ser diferente da atual.",
+        )
+
+    current_user.hashed_password = get_password_hash(body.senha_nova)
+    await db.flush()
+
+    logger.info("Senha alterada pelo próprio usuário %s", current_user.id)
 
 
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED,
