@@ -22,20 +22,21 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.create_table(
         "password_reset_token",
-        sa.Column("id", sa.Integer(), primary_key=True, index=True),
+        # Sem index=True: a coluna já é PRIMARY KEY, e um índice secundário
+        # sobre ela seria puro desperdício de espaço e de custo de escrita.
+        sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("user_id", sa.Integer(), nullable=False),
         # SHA-256 em hex: 64 caracteres. Guardamos o hash, nunca o token.
+        # O unique=True já cria o índice usado na busca por token.
         sa.Column("token_hash", sa.String(64), nullable=False, unique=True),
         sa.Column("expires_at", sa.DateTime(), nullable=False),
         sa.Column("used_at", sa.DateTime(), nullable=True),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now()),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
     )
-    op.create_index("ix_password_reset_token_id", "password_reset_token", ["id"])
+    # Único índice que falta: usado ao invalidar os pedidos pendentes de uma
+    # conta durante o reset.
     op.create_index("ix_password_reset_token_user_id", "password_reset_token", ["user_id"])
-    op.create_index(
-        "ix_password_reset_token_token_hash", "password_reset_token", ["token_hash"], unique=True
-    )
 
 
 def downgrade() -> None:
