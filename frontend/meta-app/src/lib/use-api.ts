@@ -25,11 +25,20 @@ export function useApi<T>(path: string): ApiState<T> {
     erro: null,
     carregando: true,
   });
+  const [pathAnterior, setPathAnterior] = useState(path);
+
+  // Reset feito durante o render, não dentro do efeito: é o padrão do React
+  // para "resetar estado quando uma prop muda". Fazê-lo no efeito dispara
+  // renders em cascata e ainda deixa os dados da rota anterior visíveis por
+  // um frame — o que na paginação da tabela aparecia como a página velha
+  // piscando antes da nova.
+  if (path !== pathAnterior) {
+    setPathAnterior(path);
+    setEstado({ data: null, erro: null, carregando: true });
+  }
 
   useEffect(() => {
     let cancelado = false;
-
-    setEstado({ data: null, erro: null, carregando: true });
 
     apiFetch<T>(path)
       .then((data) => {
@@ -70,11 +79,16 @@ export function useApiVarios<T extends unknown[]>(paths: string[]): ApiState<T> 
     carregando: true,
   });
   const chave = paths.join("|");
+  const [chaveAnterior, setChaveAnterior] = useState(chave);
+
+  // Mesmo reset-durante-render do `useApi`.
+  if (chave !== chaveAnterior) {
+    setChaveAnterior(chave);
+    setEstado({ data: null, erro: null, carregando: true });
+  }
 
   useEffect(() => {
     let cancelado = false;
-
-    setEstado({ data: null, erro: null, carregando: true });
 
     Promise.all(chave.split("|").map((p) => apiFetch(p)))
       .then((data) => {

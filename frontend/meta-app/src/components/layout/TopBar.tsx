@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Menu, PanelLeftClose, Search, Bell, LogOut } from "lucide-react";
+import { Menu, PanelLeftClose, Search, LogOut } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import LogoMark from "../../../public/logo.png";
 import { useAuth } from "@/lib/auth-context";

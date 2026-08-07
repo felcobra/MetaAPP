@@ -56,16 +56,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Tenta restaurar sessão a partir de tokens existentes no localStorage
+  // Tenta restaurar sessão a partir de tokens existentes no localStorage.
+  // O caso "sem token" também passa pela cadeia de promise, em vez de sair
+  // cedo com um setIsLoading síncrono: setState direto no corpo do efeito
+  // dispara renders em cascata (regra react-hooks/set-state-in-effect).
   useEffect(() => {
     const token = getAccessToken();
-    if (!token) {
-      setIsLoading(false);
-      return;
-    }
 
-    apiFetch<SessionUser>("/users/me/profile")
-      .then((profile) => setUser(profile))
+    const restaurar = token
+      ? apiFetch<SessionUser>("/users/me/profile").then((profile) => setUser(profile))
+      : Promise.resolve();
+
+    restaurar
       .catch(() => {
         // Token inválido ou expirado e refresh falhou → limpa sessão
         clearTokens();
