@@ -67,7 +67,31 @@ Confira que subiu: `https://<dominio-da-api>/api/v1/docs`.
 
 ## 4. Migration — criar as tabelas do MetaApp
 
-**Só depois do serviço subir.** Use a aba **Terminal** do `metaapp-api`.
+**Deploy primeiro, migration depois.** A ordem importa e é contraintuitiva: a
+migration é um arquivo do repositório, então ela só existe dentro do container
+depois que o deploy levou o código novo até lá. Rodar antes faz o Alembic
+enxergar um `head` desatualizado e não aplicar nada do que se esperava.
+
+Confira em que revisão o banco está — este comando **conecta**, e portanto diz
+a verdade:
+
+```
+alembic current
+```
+
+Para revisar o SQL antes de aplicar, informe o intervalo explicitamente:
+
+```
+alembic upgrade <revisao_atual>:head --sql
+```
+
+O intervalo é obrigatório porque `--sql` roda em modo offline, sem conectar no
+banco. Sem ele, o Alembic assume banco vazio e gera o SQL de todas as migrations
+desde o início — incluindo tabelas que já existem, o que falharia em
+"table already exists". Foi o que aconteceu na primeira tentativa de aplicar a
+`b2c3d4e5f6a7`.
+
+Use a aba **Terminal** do serviço.
 
 Backup primeiro, no terminal do serviço do banco:
 
