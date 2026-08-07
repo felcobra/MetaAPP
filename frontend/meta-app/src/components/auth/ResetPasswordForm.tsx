@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Lock } from "lucide-react";
@@ -39,9 +39,6 @@ function CampoSenha({ id, label }: { id: string; label: string }) {
 export function ResetPasswordForm() {
   const router = useRouter();
   const token = useSearchParams().get("token");
-
-  const [hidratado, setHidratado] = useState(false);
-  useEffect(() => setHidratado(true), []);
 
   const [enviando, setEnviando] = useState(false);
   const [pronto, setPronto] = useState(false);
@@ -137,7 +134,7 @@ export function ResetPasswordForm() {
           fullWidth
           size="md"
           className="h-12"
-          disabled={enviando || !hidratado}
+          disabled={enviando}
         >
           {enviando ? "Salvando…" : "Redefinir senha →"}
         </Button>

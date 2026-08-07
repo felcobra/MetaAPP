@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { Mail } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -9,9 +9,6 @@ import { CardEyebrow } from "@/components/ui/Card";
 import { apiFetch } from "@/lib/api";
 
 export function ForgotPasswordForm() {
-  const [hidratado, setHidratado] = useState(false);
-  useEffect(() => setHidratado(true), []);
-
   const [enviando, setEnviando] = useState(false);
   const [enviado, setEnviado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -96,7 +93,7 @@ export function ForgotPasswordForm() {
           fullWidth
           size="md"
           className="h-12"
-          disabled={enviando || !hidratado}
+          disabled={enviando}
         >
           {enviando ? "Enviando…" : "Enviar link de redefinição →"}
         </Button>

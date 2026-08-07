@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Lock, Mail } from "lucide-react";
@@ -22,14 +22,6 @@ export function RegisterForm() {
   const { register } = useAuth();
 
   const [mostrarSenha, setMostrarSenha] = useState(false);
-
-  // Sem isto, um Enter dado antes de o React hidratar faz o navegador
-  // submeter o form nativamente. Como o metodo padrao do HTML e GET, e-mail
-  // e SENHA iriam parar na query string -- e portanto no historico do
-  // navegador, em logs de proxy e no cabecalho Referer. Em modo dev a janela
-  // e de varios segundos, porque o Next compila a pagina sob demanda.
-  const [hidratado, setHidratado] = useState(false);
-  useEffect(() => setHidratado(true), []);
 
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -144,7 +136,7 @@ export function RegisterForm() {
           fullWidth
           size="md"
           className="h-12"
-          disabled={enviando || !hidratado}
+          disabled={enviando}
         >
           {enviando ? "Criando conta…" : "Criar conta →"}
         </Button>
