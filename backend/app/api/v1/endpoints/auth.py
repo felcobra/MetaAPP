@@ -17,7 +17,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.core.database import get_db
 from app.core.security import (
@@ -29,14 +29,92 @@ from app.core.security import (
 )
 from app.models.user import User
 from app.models.auth import RevokedToken
-from app.schemas.auth import Token, RefreshTokenRequest, LogoutRequest
+from app.models.hr import Membro, MembroPerfilMetaapp
+from app.schemas.auth import Token, RefreshTokenRequest, LogoutRequest, RegisterRequest
 
+import logging
+
+logger = logging.getLogger("metaapp")
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
 # MED-03: hash dummy pré-computado para garantir tempo de resposta constante
 # no login, mesmo quando o e-mail não existe no banco (evita user enumeration).
 _DUMMY_HASH: str = get_password_hash("__meta_timing_protection_dummy_2026__")
+
+
+@router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED,
+             summary="Auto-cadastro de membro da empresa")
+@limiter.limit("5/minute")
+async def register(
+    request: Request,
+    body: RegisterRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Cria o login de quem já é membro da empresa.
+
+    O portão é a tabela `membro`: só se cadastra quem já está lá, com o mesmo
+    e-mail. Isso mantém o app fechado sem precisar de convite ou aprovação —
+    e resolve o vínculo membro↔usuário na hora, em vez de depender de um seed.
+
+    O nome e o papel não vêm do cliente: nome sai de `membro.nome` e o papel é
+    sempre "member". Promover alguém a admin continua sendo ação de admin.
+    """
+    email = body.email.strip().lower()
+
+    membro = (await db.execute(
+        select(Membro).where(func.lower(Membro.email) == email)
+    )).scalar_one_or_none()
+
+    ja_existe = (await db.execute(
+        select(User).where(func.lower(User.email) == email)
+    )).scalar_one_or_none()
+
+    perfil = None
+    if membro:
+        perfil = (await db.execute(
+            select(MembroPerfilMetaapp)
+            .where(MembroPerfilMetaapp.membro_id == membro.id)
+        )).scalar_one_or_none()
+
+    # Uma mensagem só para "não é membro", "já tem conta" e "perfil já
+    # vinculado". Distinguir os casos transformaria este endpoint num oráculo
+    # para descobrir quem trabalha na Meta e quem ainda não se cadastrou.
+    if not membro or ja_existe or (perfil and perfil.user_id is not None):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Não foi possível criar a conta com este e-mail. "
+                "Use seu e-mail corporativo da Meta. Se você já tem conta, "
+                "faça login."
+            ),
+        )
+
+    user = User(
+        email=membro.email,
+        full_name=membro.nome,
+        hashed_password=get_password_hash(body.password),
+        role="member",
+        is_active=True,
+    )
+    db.add(user)
+    await db.flush()
+
+    if perfil is None:
+        # Membro sem linha de perfil (cadastrado depois do seed_perfis).
+        perfil = MembroPerfilMetaapp(membro_id=membro.id, ativo=True)
+        db.add(perfil)
+    perfil.user_id = user.id
+    await db.flush()
+
+    logger.info("Auto-cadastro: user %s vinculado ao membro %s", user.id, membro.id)
+
+    refresh_token, _jti = create_refresh_token(user.id)
+    return {
+        "access_token": create_access_token(user.id),
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+    }
 
 
 @router.post("/login", response_model=Token, summary="Login com email e senha")
