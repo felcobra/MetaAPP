@@ -13,7 +13,7 @@ import string
 
 from sqlalchemy import select
 
-from app.core.database import AsyncSessionLocal
+from app.core.database import AsyncSessionLocal, engine
 from app.core.security import get_password_hash
 from app.models.user import User
 
@@ -60,5 +60,14 @@ async def create_admin() -> None:
         print("🔑 Senha configurada via ADMIN_PASSWORD (env var).")
 
 
+async def main() -> None:
+    # Fecha o pool antes de o event loop morrer; caso contrario o aiomysql
+    # imprime "RuntimeError: Event loop is closed" ao ser coletado.
+    try:
+        await create_admin()
+    finally:
+        await engine.dispose()
+
+
 if __name__ == "__main__":
-    asyncio.run(create_admin())
+    asyncio.run(main())

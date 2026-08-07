@@ -25,7 +25,7 @@ import sys
 
 from sqlalchemy import select
 
-from app.core.database import AsyncSessionLocal
+from app.core.database import AsyncSessionLocal, engine
 from app.models.hr import Membro, MembroPerfilMetaapp
 from app.models.user import User
 
@@ -97,5 +97,17 @@ async def seed_perfis(dry_run: bool = False) -> None:
         print(f"{len(membros) - criados} membros ja tinham perfil.")
 
 
+async def main() -> None:
+    # O pool precisa ser fechado enquanto o event loop ainda existe. Sem isto,
+    # asyncio.run() fecha o loop primeiro e o coletor de lixo finaliza as
+    # conexões do aiomysql depois, imprimindo um traceback
+    # "RuntimeError: Event loop is closed" apos o trabalho ja ter sido
+    # commitado -- alarmante e inofensivo ao mesmo tempo.
+    try:
+        await seed_perfis(dry_run="--dry-run" in sys.argv)
+    finally:
+        await engine.dispose()
+
+
 if __name__ == "__main__":
-    asyncio.run(seed_perfis(dry_run="--dry-run" in sys.argv))
+    asyncio.run(main())
