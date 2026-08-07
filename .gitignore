@@ -34,6 +34,18 @@ ENV/
 *.swp
 *.swo
 
+# Configuração local de ferramentas (launch.json guarda caminho absoluto
+# da máquina de quem criou — não serve para mais ninguém)
+.claude/
+
+# Node — o único lockfile válido é frontend/meta-app/package-lock.json.
+# Um npm install rodado na pasta errada cria stubs vazios na raiz e em
+# frontend/, e lockfile vazio faz o Next inferir o workspace root errado.
+/package-lock.json
+/frontend/package-lock.json
+node_modules/
+.next/
+
 # Logs
 *.log
 logs/
