@@ -30,6 +30,20 @@ class ChangePasswordRequest(BaseModel):
         return _validar_forca_senha(v)
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    senha_nova: str
+
+    @field_validator("senha_nova")
+    @classmethod
+    def validar_forca(cls, v: str) -> str:
+        return _validar_forca_senha(v)
+
+
 class RegisterRequest(BaseModel):
     """Auto-cadastro de membro da empresa.
 

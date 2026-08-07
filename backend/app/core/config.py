@@ -44,6 +44,19 @@ class Settings(BaseSettings):
             f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
         )
 
+    # E-mail (SMTP) — usado só na redefinição de senha.
+    # Vazio = redefinição por e-mail desligada; o endpoint continua respondendo
+    # normalmente (para não revelar quais e-mails existem) e registra um aviso.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""
+
+    # Base para montar o link do e-mail. Aponta para o FRONTEND, não para a API.
+    FRONTEND_URL: str = "http://localhost:3000"
+    RESET_TOKEN_EXPIRE_MINUTES: int = 30
+
     # CORS
     ALLOWED_ORIGINS: List[str] = [
         "http://localhost:3000",

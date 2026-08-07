@@ -9,7 +9,7 @@ Arquitetura:
 """
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, Index
+from sqlalchemy import String, DateTime, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -28,3 +28,23 @@ class RevokedToken(Base):
     user_id: Mapped[int] = mapped_column(nullable=False, index=True)
     revoked_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     expired_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)  # para limpeza futura
+
+
+class PasswordResetToken(Base):
+    """Token de redefinição de senha enviado por e-mail.
+
+    Guarda o SHA-256 do token, nunca o token em si: quem obtiver uma cópia do
+    banco não consegue redefinir senha de ninguém, porque o hash não volta.
+    Mesmo raciocínio de nunca guardar senha em claro.
+    """
+    __tablename__ = "password_reset_token"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # Preenchido no momento do uso: garante que o link valha uma vez só.
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

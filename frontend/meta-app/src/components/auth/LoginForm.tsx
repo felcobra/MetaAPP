@@ -128,7 +128,13 @@ export function LoginForm() {
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-slate-500">
+      <p className="mt-4 text-center text-sm">
+        <Link href="/esqueci-senha" className="font-medium text-slate-500 hover:text-blue-600">
+          Esqueci minha senha
+        </Link>
+      </p>
+
+      <p className="mt-2 text-center text-sm text-slate-500">
         Primeiro acesso?{" "}
         <Link href="/cadastro" className="font-semibold text-blue-600 hover:text-blue-700">
           Criar conta

@@ -4,7 +4,8 @@ import type { NextRequest } from "next/server";
 /**
  * Middleware de proteção de rotas — MetaAPP
  *
- * Rotas públicas (sem autenticação): "/" (login) e "/cadastro".
+ * Rotas públicas (sem autenticação): login, cadastro e o fluxo de
+ * redefinição de senha — quem esqueceu a senha, por definição, não tem sessão.
  * Todas as outras rotas requerem o cookie meta_session.
  *
  * O cookie é setado pelo cliente JS (api.ts → setTokens) no login
@@ -13,7 +14,12 @@ import type { NextRequest } from "next/server";
  * como sinal de sessão ativa. A autorização real acontece no backend via JWT.
  */
 
-const PUBLIC_ROUTES = new Set(["/", "/cadastro"]);
+const PUBLIC_ROUTES = new Set([
+  "/",
+  "/cadastro",
+  "/esqueci-senha",
+  "/redefinir-senha",
+]);
 
 export function middleware(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
