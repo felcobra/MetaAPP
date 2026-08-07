@@ -362,6 +362,14 @@ async def get_active_projects(
     """Retorna projetos ativos no formato que a tabela do Dashboard consome.
     Progresso estimado pelo pct_conclusao do acompanhamento mais recente;
     cliente obtido via Contrato → Cliente (projeto_externo pode não ter contrato).
+
+    v4 — Batching: a versão anterior fazia 1 query para listar os projetos e
+    depois 3 queries POR PROJETO (acompanhamento, gerente, contrato) dentro de
+    um loop sequencial — até 61 round-trips ao banco numa única requisição.
+    Sob o volume real de produção (milhares de linhas em membro_projeto e
+    contrato) isso estourava o timeout do proxy e a API respondia 503. Agora
+    são só 4 queries no total: os projetos, e uma consulta em lote para cada
+    satélite (acompanhamentos, alocações, contratos), casadas em Python.
     """
     r = await db.execute(
         select(ProjetoExterno)
@@ -370,50 +378,68 @@ async def get_active_projects(
         .limit(20)
     )
     projetos = r.scalars().all()
+    projeto_ids = [p.id for p in projetos]
+
+    if not projeto_ids:
+        return []
+
+    # ── Último acompanhamento por projeto (1 query em lote) ─────────────────
+    acomp_rows = (await db.execute(
+        select(
+            AcompanhamentoProjeto.projeto_externo_id,
+            AcompanhamentoProjeto.pct_conclusao,
+            AcompanhamentoProjeto.status_cronograma,
+        )
+        .where(AcompanhamentoProjeto.projeto_externo_id.in_(projeto_ids))
+        .order_by(
+            AcompanhamentoProjeto.projeto_externo_id,
+            desc(AcompanhamentoProjeto.data_resposta),
+        )
+    )).all()
+    ultimo_acomp: dict[int, tuple] = {}
+    for row in acomp_rows:
+        ultimo_acomp.setdefault(row.projeto_externo_id, (row.pct_conclusao, row.status_cronograma))
+
+    # ── Gerente por projeto (1 query em lote) ───────────────────────────────
+    # Alocações com cargo de gerência vêm primeiro; se o projeto não tiver
+    # nenhuma, cai para qualquer membro ainda alocado (data_saida NULL).
+    gerente_rows = (await db.execute(
+        select(MembroProjeto.projeto_externo_id, Membro.nome, Cargo.nome.like("Gerente%").label("eh_gerente"))
+        .join(Membro, Membro.id == MembroProjeto.membro_id)
+        .outerjoin(Cargo, Cargo.id == MembroProjeto.cargo_id)
+        .where(
+            MembroProjeto.projeto_externo_id.in_(projeto_ids),
+            MembroProjeto.data_saida.is_(None),
+        )
+        .order_by(MembroProjeto.projeto_externo_id, desc("eh_gerente"), Membro.id)
+    )).all()
+    gerente_por_projeto: dict[int, str] = {}
+    for row in gerente_rows:
+        gerente_por_projeto.setdefault(row.projeto_externo_id, row.nome)
+
+    # ── Cliente via Contrato → Cliente (1 query em lote) ────────────────────
+    contrato_rows = (await db.execute(
+        select(Contrato.projeto_externo_id, Cliente.nome)
+        .join(Contrato.cliente)
+        .where(Contrato.projeto_externo_id.in_(projeto_ids))
+        .order_by(Contrato.projeto_externo_id, Contrato.id)
+    )).all()
+    cliente_por_projeto: dict[int, str] = {}
+    for row in contrato_rows:
+        cliente_por_projeto.setdefault(row.projeto_externo_id, row.nome)
 
     result = []
     for p in projetos:
-        ultimo_acomp = (await db.execute(
-            select(AcompanhamentoProjeto.pct_conclusao, AcompanhamentoProjeto.status_cronograma)
-            .where(AcompanhamentoProjeto.projeto_externo_id == p.id)
-            .order_by(AcompanhamentoProjeto.data_resposta.desc())
-            .limit(1)
-        )).first()
-        pct, status_cronograma = ultimo_acomp if ultimo_acomp else (None, None)
-        prog = _PCT_FAIXA_MEIO.get(pct, 0)
-
-        # O gerente sai de membro_projeto. Alocações com cargo de gerência vêm
-        # primeiro; se o projeto não tiver nenhuma, cai para qualquer membro
-        # ainda alocado.
-        gerente = (await db.execute(
-            select(Membro.nome)
-            .join(MembroProjeto, MembroProjeto.membro_id == Membro.id)
-            .outerjoin(Cargo, Cargo.id == MembroProjeto.cargo_id)
-            .where(
-                MembroProjeto.projeto_externo_id == p.id,
-                MembroProjeto.data_saida.is_(None),
-            )
-            .order_by(Cargo.nome.like("Gerente%").desc(), Membro.id)
-            .limit(1)
-        )).scalar_one_or_none()
-
-        contrato = (await db.execute(
-            select(Contrato)
-            .join(Contrato.cliente)
-            .where(Contrato.projeto_externo_id == p.id)
-            .limit(1)
-        )).scalar_one_or_none()
-        cliente = contrato.cliente.nome if contrato and contrato.cliente else None
-
+        pct, status_cronograma = ultimo_acomp.get(p.id, (None, None))
         result.append({
             "project": p.nome,
-            "manager": gerente or "—",
-            "client": cliente or "—",
+            "manager": gerente_por_projeto.get(p.id) or "—",
+            "client": cliente_por_projeto.get(p.id) or "—",
             # O status do prazo é registrado no acompanhamento; derivá-lo do
             # percentual (o que era feito aqui) marcava como "atrasado"
             # qualquer projeto em fase inicial, mesmo dentro do prazo.
             "status": _STATUS_VISUAL.get(status_cronograma, "sem-dados"),
-            "progress": prog,
+            "progress": _PCT_FAIXA_MEIO.get(pct, 0),
         })
     return result
 

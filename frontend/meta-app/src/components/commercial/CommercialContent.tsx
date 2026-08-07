@@ -96,6 +96,7 @@ export function CommercialContent() {
       status: rotuloStatus(op.status),
       origin: op.origem,
       coordination: op.coordenacao,
+      reason: op.motivo !== "—" ? op.motivo : undefined,
     })) ?? [];
 
   return (

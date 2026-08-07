@@ -15,7 +15,7 @@ from typing import List, Optional
 
 from app.core.database import get_db
 from app.api.deps import get_current_user
-from app.models.financial import Contrato
+from app.models.financial import Contrato, Cliente
 from app.models.hr import Cargo, Coordenacao, Membro, MembroProjeto
 from app.models.project_tracking import (
     ProjetoExterno, AcompanhamentoProjeto,
@@ -61,44 +61,77 @@ async def get_board(
 
     Difere de /dashboard/active-projects por trazer também os finalizados (o
     quadro tem filtro próprio) e a área responsável.
+
+    v2 — Batching: a versão anterior fazia 1 query para listar os projetos e
+    depois 3 queries POR PROJETO (acompanhamento, alocação, contrato) num loop
+    sequencial. Sob o volume real de produção isso estourava o timeout do
+    proxy e a API respondia 503 (ver mesmo fix em dashboard.get_active_projects).
+    Agora são 4 queries no total, casadas em Python por projeto_externo_id.
     """
     projetos = (await db.execute(
         select(ProjetoExterno).order_by(desc(ProjetoExterno.id))
     )).scalars().all()
+    projeto_ids = [p.id for p in projetos]
+
+    if not projeto_ids:
+        return []
+
+    # ── Último acompanhamento por projeto ────────────────────────────────────
+    acomp_rows = (await db.execute(
+        select(
+            AcompanhamentoProjeto.projeto_externo_id,
+            AcompanhamentoProjeto.pct_conclusao,
+            AcompanhamentoProjeto.status_cronograma,
+        )
+        .where(AcompanhamentoProjeto.projeto_externo_id.in_(projeto_ids))
+        .order_by(
+            AcompanhamentoProjeto.projeto_externo_id,
+            desc(AcompanhamentoProjeto.data_resposta),
+        )
+    )).all()
+    ultimo_por_projeto: dict[int, tuple] = {}
+    for row in acomp_rows:
+        ultimo_por_projeto.setdefault(row.projeto_externo_id, (row.pct_conclusao, row.status_cronograma))
+
+    # ── Gerente + área por projeto (mesma alocação) ─────────────────────────
+    # Cargos de gerência vêm primeiro; se o projeto não tiver nenhuma
+    # alocação com cargo de gerência, cai para qualquer membro ainda alocado.
+    alocacao_rows = (await db.execute(
+        select(
+            MembroProjeto.projeto_externo_id,
+            Membro.nome,
+            Coordenacao.nome.label("area_nome"),
+            Cargo.nome.like("Gerente%").label("eh_gerente"),
+        )
+        .join(Membro, Membro.id == MembroProjeto.membro_id)
+        .outerjoin(Cargo, Cargo.id == MembroProjeto.cargo_id)
+        .outerjoin(Coordenacao, Coordenacao.id == MembroProjeto.coordenacao_id)
+        .where(
+            MembroProjeto.projeto_externo_id.in_(projeto_ids),
+            MembroProjeto.data_saida.is_(None),
+        )
+        .order_by(MembroProjeto.projeto_externo_id, desc("eh_gerente"), Membro.id)
+    )).all()
+    alocacao_por_projeto: dict[int, tuple] = {}
+    for row in alocacao_rows:
+        alocacao_por_projeto.setdefault(row.projeto_externo_id, (row.nome, row.area_nome))
+
+    # ── Cliente via Contrato → Cliente ───────────────────────────────────────
+    contrato_rows = (await db.execute(
+        select(Contrato.projeto_externo_id, Cliente.nome)
+        .join(Contrato.cliente)
+        .where(Contrato.projeto_externo_id.in_(projeto_ids))
+        .order_by(Contrato.projeto_externo_id, Contrato.id)
+    )).all()
+    cliente_por_projeto: dict[int, str] = {}
+    for row in contrato_rows:
+        cliente_por_projeto.setdefault(row.projeto_externo_id, row.nome)
 
     resultado = []
     for p in projetos:
-        ultimo = (await db.execute(
-            select(AcompanhamentoProjeto.pct_conclusao, AcompanhamentoProjeto.status_cronograma)
-            .where(AcompanhamentoProjeto.projeto_externo_id == p.id)
-            .order_by(desc(AcompanhamentoProjeto.data_resposta))
-            .limit(1)
-        )).first()
-        pct, status_cronograma = ultimo if ultimo else (None, None)
-
-        # Gerente e área saem da mesma alocação: quem responde pelo projeto e
-        # de qual coordenação essa pessoa é. Cargos de gerência vêm primeiro.
-        alocacao = (await db.execute(
-            select(Membro.nome, Coordenacao.nome)
-            .join(MembroProjeto, MembroProjeto.membro_id == Membro.id)
-            .outerjoin(Cargo, Cargo.id == MembroProjeto.cargo_id)
-            .outerjoin(Coordenacao, Coordenacao.id == MembroProjeto.coordenacao_id)
-            .where(
-                MembroProjeto.projeto_externo_id == p.id,
-                MembroProjeto.data_saida.is_(None),
-            )
-            .order_by(Cargo.nome.like("Gerente%").desc(), Membro.id)
-            .limit(1)
-        )).first()
-        gerente, area = alocacao if alocacao else (None, None)
-
-        contrato = (await db.execute(
-            select(Contrato)
-            .join(Contrato.cliente)
-            .where(Contrato.projeto_externo_id == p.id)
-            .limit(1)
-        )).scalar_one_or_none()
-        cliente = contrato.cliente.nome if contrato and contrato.cliente else None
+        pct, status_cronograma = ultimo_por_projeto.get(p.id, (None, None))
+        gerente, area = alocacao_por_projeto.get(p.id, (None, None))
+        cliente = cliente_por_projeto.get(p.id)
 
         resultado.append({
             "id": p.id,

@@ -89,6 +89,7 @@ export interface TabelaOportunidadesApi {
     contato: string;
     origem: string;
     coordenacao: string;
+    motivo: string;
   }[];
   total: number;
   total_pages: number;

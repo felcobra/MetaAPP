@@ -31,6 +31,22 @@ from app.schemas.commercial import (
 logger = logging.getLogger("metaapp")
 router = APIRouter()
 
+# Ordem canônica do funil comercial (conferida contra a BDU, que lê o mesmo
+# banco). `oportunidade.fase_atual_nome` também carrega fases de outros
+# pipes/boards importados pro mesmo campo (ex.: "IVE Social", que não é etapa
+# de venda) — sem uma lista fixa, esses valores viravam "estágios" fantasmas
+# no funil. Fases fora desta lista são histórico de outro processo, não do
+# funil comercial, e ficam de fora da leitura — mas continuam contáveis em
+# outras rotas (ex.: /oportunidades) que não filtram por fase.
+_FUNIL_FASES_CANONICAS = [
+    "Caixa de Entrada",
+    "Ligação Diagnóstico",
+    "Reunião Diagnóstico",
+    "Proposta Comercial",
+    "Negociação",
+    "Pré-Assinatura de Contrato",
+]
+
 # ========== Dimensões ==========
 
 @router.get("/origens", response_model=List[DimBaseRead], summary="Listar origens de leads")
@@ -155,16 +171,23 @@ async def get_resumo_comercial(
     são, portanto, do histórico inteiro.
     """
     # Funil — oportunidades abertas, agrupadas pela fase em que pararam.
+    # Restrito às fases canônicas do funil comercial (ver _FUNIL_FASES_CANONICAS)
+    # e sempre nessa ordem, com 0 explícito para fase sem oportunidade parada —
+    # um GROUP BY livre listava qualquer valor de fase_atual_nome, incluindo
+    # fases de outros processos importados pro mesmo campo.
     funil_rows = await db.execute(
         select(Oportunidade.fase_atual_nome, func.count(Oportunidade.id))
         .where(
             Oportunidade.status_terminal == "ativo",
-            Oportunidade.fase_atual_nome.isnot(None),
+            Oportunidade.fase_atual_nome.in_(_FUNIL_FASES_CANONICAS),
         )
         .group_by(Oportunidade.fase_atual_nome)
-        .order_by(desc(func.count(Oportunidade.id)))
     )
-    funil = [{"label": nome, "value": total} for nome, total in funil_rows]
+    contagem_por_fase = {nome: total for nome, total in funil_rows}
+    funil = [
+        {"label": fase, "value": contagem_por_fase.get(fase, 0)}
+        for fase in _FUNIL_FASES_CANONICAS
+    ]
 
     # Desfechos por status_terminal.
     status_rows = await db.execute(
@@ -180,19 +203,33 @@ async def get_resumo_comercial(
 
     # Origens e motivos de perda: a contagem sai das oportunidades, não das
     # tabelas de dimensão — dimensão sem oportunidade vinculada não vira barra.
+    #
+    # canonical_value é uma curadoria manual sobre raw_value (o texto cru que
+    # veio do Pipefy/CRM) e a maior parte das linhas de dim_lead_origem/
+    # dim_motivo_perda nunca passou por essa curadoria — canonical_value fica
+    # NULL. Antes disto, o GROUP BY canonical_value jogava toda essa maioria
+    # não-curada numa única fatia "Sem origem"/"Não informado", escondendo a
+    # origem real (Site, Indicação, ...) que só existe em raw_value. Com
+    # COALESCE, usa o valor curado quando existe e cai pro cru quando não.
     origem_rows = await db.execute(
-        select(DimLeadOrigem.canonical_value, func.count(Oportunidade.id))
+        select(
+            func.coalesce(DimLeadOrigem.canonical_value, DimLeadOrigem.raw_value),
+            func.count(Oportunidade.id),
+        )
         .join(Oportunidade, Oportunidade.origem_id == DimLeadOrigem.id)
-        .group_by(DimLeadOrigem.canonical_value)
+        .group_by(func.coalesce(DimLeadOrigem.canonical_value, DimLeadOrigem.raw_value))
         .order_by(desc(func.count(Oportunidade.id)))
         .limit(8)
     )
     origens = [{"label": nome or "Sem origem", "value": total} for nome, total in origem_rows]
 
     motivo_rows = await db.execute(
-        select(DimMotivoPerdida.canonical_value, func.count(Oportunidade.id))
+        select(
+            func.coalesce(DimMotivoPerdida.canonical_value, DimMotivoPerdida.raw_value),
+            func.count(Oportunidade.id),
+        )
         .join(Oportunidade, Oportunidade.motivo_perda_id == DimMotivoPerdida.id)
-        .group_by(DimMotivoPerdida.canonical_value)
+        .group_by(func.coalesce(DimMotivoPerdida.canonical_value, DimMotivoPerdida.raw_value))
         .order_by(desc(func.count(Oportunidade.id)))
         .limit(15)
     )
@@ -231,13 +268,20 @@ async def get_tabela_oportunidades(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Como /oportunidades, mas com lead, origem e coordenação já resolvidos em
-    nome — a tabela mostra texto, e resolver isso no cliente exigiria uma
-    chamada por linha.
+    """Como /oportunidades, mas com lead, origem, motivo e coordenação já
+    resolvidos em nome — a tabela mostra texto, e resolver isso no cliente
+    exigiria uma chamada por linha.
     """
     total = (await db.execute(select(func.count(Oportunidade.id)))).scalar() or 0
     total_pages = max(1, -(-total // page_size))
     skip = (page - 1) * page_size
+
+    # COALESCE(canonical_value, raw_value): canonical_value é curadoria manual
+    # e a maioria das linhas de dim_lead_origem/dim_motivo_perda nunca passou
+    # por ela — usar só canonical_value deixava a coluna vazia ("—") na
+    # maior parte das linhas mesmo quando a origem/motivo cru existia.
+    origem_nome = func.coalesce(DimLeadOrigem.canonical_value, DimLeadOrigem.raw_value)
+    motivo_nome = func.coalesce(DimMotivoPerdida.canonical_value, DimMotivoPerdida.raw_value)
 
     rows = await db.execute(
         select(
@@ -245,12 +289,14 @@ async def get_tabela_oportunidades(
             Oportunidade.criado_em,
             Oportunidade.status_terminal,
             Lead.nome,
-            DimLeadOrigem.canonical_value,
+            origem_nome,
             Coordenacao.sigla,
+            motivo_nome,
         )
         .outerjoin(Lead, Lead.id == Oportunidade.lead_id)
         .outerjoin(DimLeadOrigem, DimLeadOrigem.id == Oportunidade.origem_id)
         .outerjoin(Coordenacao, Coordenacao.id == Oportunidade.coordenacao_id)
+        .outerjoin(DimMotivoPerdida, DimMotivoPerdida.id == Oportunidade.motivo_perda_id)
         .order_by(desc(Oportunidade.id))
         .offset(skip)
         .limit(page_size)
@@ -264,8 +310,9 @@ async def get_tabela_oportunidades(
             "contato": nome or "—",
             "origem": origem or "—",
             "coordenacao": sigla or "—",
+            "motivo": motivo or "—",
         }
-        for op_id, criado, status_terminal, nome, origem, sigla in rows
+        for op_id, criado, status_terminal, nome, origem, sigla, motivo in rows
     ]
 
     return {
