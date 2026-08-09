@@ -9,6 +9,7 @@
 # padrao .env.* acima os engole.
 !.env.example
 !.env.production.example
+!.env.local.example
 
 # Python
 __pycache__/

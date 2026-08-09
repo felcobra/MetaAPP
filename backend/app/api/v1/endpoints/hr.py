@@ -507,6 +507,7 @@ async def get_orgchart(
         root_data = _build_tree(nos_raiz[0], perfis_by_membro) if nos_raiz else None
         result.append({
             "id": div.slug,
+            "divisao_num_id": div.id,   # ID numérico — usado pelo painel admin para POST /orgchart/nos
             "label": div.nome,
             "root": root_data,
         })

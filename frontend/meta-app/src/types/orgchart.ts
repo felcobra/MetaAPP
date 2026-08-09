@@ -23,6 +23,8 @@ export interface OrgNode {
 
 export interface OrgDivision {
   id: string;
+  /** ID numérico do banco — necessário para criar/remover nós via API. */
+  divisaoNumId: number;
   label: string;
   root: OrgNode;
 }
@@ -44,6 +46,8 @@ export interface OrgNoApi {
 
 export interface OrgDivisaoApi {
   id: string;
+  /** ID numérico (PK) da divisão — retornado pelo backend para uso no painel admin. */
+  divisao_num_id: number;
   label: string;
   /** null quando a divisão foi criada mas ainda não tem nó raiz. */
   root: OrgNoApi | null;
@@ -76,6 +80,7 @@ export function normalizarDivisoes(divisoes: OrgDivisaoApi[]): OrgDivision[] {
     .filter((d): d is OrgDivisaoApi & { root: OrgNoApi } => d.root !== null)
     .map((d) => ({
       id: d.id,
+      divisaoNumId: d.divisao_num_id,
       label: d.label,
       root: normalizarNo(d.root),
     }));
