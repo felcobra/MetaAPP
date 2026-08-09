@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { AppShell } from "@/components/layout/AppShell";
-import { ExternalProjectsBoard } from "@/components/external-projects/ExternalProjectsBoard";
-import { externalProjects } from "@/mocks/projects";
+import { ExternalProjectsContent } from "@/components/external-projects/ExternalProjectsContent";
 
 export const metadata: Metadata = {
   title: "Projetos externos | Meta App",
@@ -10,7 +9,7 @@ export const metadata: Metadata = {
 export default function ExternalProjectsPage() {
   return (
     <AppShell pageTitle="Projetos externos">
-      <ExternalProjectsBoard projects={externalProjects} />
+      <ExternalProjectsContent />
     </AppShell>
   );
 }

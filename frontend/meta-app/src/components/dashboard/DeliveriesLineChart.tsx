@@ -27,6 +27,17 @@ function buildPath(points: DeliveriesPoint[]) {
 }
 
 export function DeliveriesLineChart({ data }: { data: DeliveriesPoint[] }) {
+  // buildPath divide pelo número de pontos menos um e indexa o último ponto:
+  // com 0 ou 1 mês de histórico isso vira Infinity / undefined e derruba a
+  // página. Cenário real logo após a migração, quando quase não há PAPE.
+  if (data.length < 2) {
+    return (
+      <p className="py-12 text-center text-sm text-slate-400">
+        Ainda não há meses suficientes para traçar a série.
+      </p>
+    );
+  }
+
   const { coords, linePath, areaPath } = buildPath(data);
 
   return (

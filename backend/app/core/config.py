@@ -44,11 +44,36 @@ class Settings(BaseSettings):
             f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
         )
 
+    # E-mail (SMTP) — usado só na redefinição de senha.
+    # Vazio = redefinição por e-mail desligada; o endpoint continua respondendo
+    # normalmente (para não revelar quais e-mails existem) e registra um aviso.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""
+
+    # Base para montar o link do e-mail. Aponta para o FRONTEND, não para a API.
+    FRONTEND_URL: str = "http://localhost:3000"
+    RESET_TOKEN_EXPIRE_MINUTES: int = 30
+
     # CORS
     ALLOWED_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
     ]
+    # Origens extras para rede local/staging. Adicione via .env sem alterar código:
+    # EXTRA_ALLOWED_ORIGINS=["http://192.168.1.100:3000","https://staging.exemplo.com"]
+    EXTRA_ALLOWED_ORIGINS: List[str] = []
+
+    @property
+    def ALL_ALLOWED_ORIGINS(self) -> List[str]:
+        """Combina ALLOWED_ORIGINS + EXTRA_ALLOWED_ORIGINS (sem duplicatas)."""
+        combined = list(dict.fromkeys(self.ALLOWED_ORIGINS + self.EXTRA_ALLOWED_ORIGINS))
+        return combined
+
     # MED-04: métodos e headers explicitamente permitidos (em vez de allow all)
     ALLOWED_METHODS: List[str] = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     ALLOWED_HEADERS: List[str] = ["Content-Type", "Authorization"]

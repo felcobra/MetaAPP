@@ -18,9 +18,15 @@ export function KpiCardRow({ cards }: { cards: KpiCard[] }) {
             {card.label}
           </p>
           <p className="mt-2 text-3xl font-bold text-slate-900">{card.value}</p>
-          <p className={cn("mt-1 flex items-center gap-1 text-xs font-medium", deltaToneClasses[card.deltaTone])}>
-            ↗ {card.delta}
-          </p>
+          {/* Sem comparação com o período anterior, o helper explica de onde
+              o número sai — mais útil que uma seta sem referência. */}
+          {card.delta ? (
+            <p className={cn("mt-1 flex items-center gap-1 text-xs font-medium", deltaToneClasses[card.deltaTone ?? "neutral"])}>
+              ↗ {card.delta}
+            </p>
+          ) : card.helper ? (
+            <p className="mt-1 text-xs leading-snug text-slate-400">{card.helper}</p>
+          ) : null}
         </Card>
       ))}
     </div>

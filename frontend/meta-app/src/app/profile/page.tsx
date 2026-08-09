@@ -2,15 +2,14 @@ import type { Metadata } from "next";
 import { Pencil, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { ProfileHeaderCard } from "@/components/profile/ProfileHeaderCard";
-import { ProfileDetailsCard } from "@/components/profile/ProfileDetailsCard";
-import { SecurityCard } from "@/components/profile/SecurityCard";
-import { profileUser, profileStats, profileFields, securityItems } from "@/mocks/profile";
+import { ProfileContent } from "@/components/profile/ProfileContent";
 
 export const metadata: Metadata = {
   title: "Meu perfil | Meta App",
 };
 
+// A página segue server component só para exportar `metadata`; os dados do
+// perfil dependem do token no browser, então vivem em ProfileContent.
 export default function ProfilePage() {
   return (
     <AppShell pageTitle="Meu perfil">
@@ -38,15 +37,7 @@ export default function ProfilePage() {
         }
       />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-1">
-          <ProfileHeaderCard user={profileUser} stats={profileStats} />
-        </div>
-        <div className="flex flex-col gap-6 lg:col-span-2">
-          <ProfileDetailsCard fields={profileFields} />
-          <SecurityCard items={securityItems} />
-        </div>
-      </div>
+      <ProfileContent />
     </AppShell>
   );
 }

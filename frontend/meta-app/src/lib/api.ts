@@ -77,6 +77,12 @@ async function runRefresh(): Promise<string | null> {
   }
 }
 
+// Endpoints de autenticação: um 401 aqui é resposta de negócio (credencial
+// errada, token de refresh inválido), não uma sessão que expirou no meio de
+// uso. Não deve disparar o fluxo de auto-refresh + redirect — isso mascarava
+// "Email ou senha incorretos" com um falso "Sessão expirada".
+const AUTH_ENDPOINTS = new Set(["/auth/login", "/auth/register", "/auth/refresh"]);
+
 // ── Cliente principal ─────────────────────────────────────────────────────────
 export async function apiFetch<T = unknown>(
   path: string,
@@ -99,7 +105,7 @@ export async function apiFetch<T = unknown>(
   let response = await fetch(url, { ...options, headers });
 
   // ── Auto-refresh em 401 ───────────────────────────────────────────────────
-  if (response.status === 401) {
+  if (response.status === 401 && !AUTH_ENDPOINTS.has(path)) {
     let newToken: string | null;
 
     if (!isRefreshing) {

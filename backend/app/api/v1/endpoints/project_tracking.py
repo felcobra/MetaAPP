@@ -10,11 +10,13 @@ v2 — Correções:
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, desc
 from typing import List, Optional
 
 from app.core.database import get_db
 from app.api.deps import get_current_user
+from app.models.financial import Contrato, Cliente
+from app.models.hr import Cargo, Coordenacao, Membro, MembroProjeto
 from app.models.project_tracking import (
     ProjetoExterno, AcompanhamentoProjeto,
     AcompImpedimento, AcompOrientador, AcompSprint,
@@ -34,6 +36,116 @@ router = APIRouter()
 # NOTA: prefix do router é /projetos, então os paths abaixo são relativos a ele.
 # Ex: GET / → GET /api/v1/projetos/
 #     GET /{id} → GET /api/v1/projetos/{id}
+
+_PCT_FAIXA_MEIO = {
+    "0-20%": 10, "21-40%": 30, "41-60%": 50, "61-80%": 70, "81-100%": 90,
+}
+
+# Os quatro valores do enum real de acompanhamento_projeto.status_cronograma.
+_STATUS_VISUAL = {
+    "Dentro do prazo": "no-prazo",
+    "Com risco de atraso": "atencao",
+    "Atrasado": "atrasado",
+    "Concluido": "concluido",
+}
+
+
+# Declarado antes de /{projeto_id}: o FastAPI casa as rotas na ordem em que
+# são registradas, e /{projeto_id} capturaria "board" como se fosse um id.
+@router.get("/board", summary="Projetos com cliente, gerente, área e progresso (quadro)")
+async def get_board(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Alimenta o quadro de Projetos Externos.
+
+    Difere de /dashboard/active-projects por trazer também os finalizados (o
+    quadro tem filtro próprio) e a área responsável.
+
+    v2 — Batching: a versão anterior fazia 1 query para listar os projetos e
+    depois 3 queries POR PROJETO (acompanhamento, alocação, contrato) num loop
+    sequencial. Sob o volume real de produção isso estourava o timeout do
+    proxy e a API respondia 503 (ver mesmo fix em dashboard.get_active_projects).
+    Agora são 4 queries no total, casadas em Python por projeto_externo_id.
+    """
+    projetos = (await db.execute(
+        select(ProjetoExterno).order_by(desc(ProjetoExterno.id))
+    )).scalars().all()
+    projeto_ids = [p.id for p in projetos]
+
+    if not projeto_ids:
+        return []
+
+    # ── Último acompanhamento por projeto ────────────────────────────────────
+    acomp_rows = (await db.execute(
+        select(
+            AcompanhamentoProjeto.projeto_externo_id,
+            AcompanhamentoProjeto.pct_conclusao,
+            AcompanhamentoProjeto.status_cronograma,
+        )
+        .where(AcompanhamentoProjeto.projeto_externo_id.in_(projeto_ids))
+        .order_by(
+            AcompanhamentoProjeto.projeto_externo_id,
+            desc(AcompanhamentoProjeto.data_resposta),
+        )
+    )).all()
+    ultimo_por_projeto: dict[int, tuple] = {}
+    for row in acomp_rows:
+        ultimo_por_projeto.setdefault(row.projeto_externo_id, (row.pct_conclusao, row.status_cronograma))
+
+    # ── Gerente + área por projeto (mesma alocação) ─────────────────────────
+    # Cargos de gerência vêm primeiro; se o projeto não tiver nenhuma
+    # alocação com cargo de gerência, cai para qualquer membro ainda alocado.
+    alocacao_rows = (await db.execute(
+        select(
+            MembroProjeto.projeto_externo_id,
+            Membro.nome,
+            Coordenacao.nome.label("area_nome"),
+            Cargo.nome.like("Gerente%").label("eh_gerente"),
+        )
+        .join(Membro, Membro.id == MembroProjeto.membro_id)
+        .outerjoin(Cargo, Cargo.id == MembroProjeto.cargo_id)
+        .outerjoin(Coordenacao, Coordenacao.id == MembroProjeto.coordenacao_id)
+        .where(
+            MembroProjeto.projeto_externo_id.in_(projeto_ids),
+            MembroProjeto.data_saida.is_(None),
+        )
+        .order_by(MembroProjeto.projeto_externo_id, desc("eh_gerente"), Membro.id)
+    )).all()
+    alocacao_por_projeto: dict[int, tuple] = {}
+    for row in alocacao_rows:
+        alocacao_por_projeto.setdefault(row.projeto_externo_id, (row.nome, row.area_nome))
+
+    # ── Cliente via Contrato → Cliente ───────────────────────────────────────
+    contrato_rows = (await db.execute(
+        select(Contrato.projeto_externo_id, Cliente.nome)
+        .join(Contrato.cliente)
+        .where(Contrato.projeto_externo_id.in_(projeto_ids))
+        .order_by(Contrato.projeto_externo_id, Contrato.id)
+    )).all()
+    cliente_por_projeto: dict[int, str] = {}
+    for row in contrato_rows:
+        cliente_por_projeto.setdefault(row.projeto_externo_id, row.nome)
+
+    resultado = []
+    for p in projetos:
+        pct, status_cronograma = ultimo_por_projeto.get(p.id, (None, None))
+        gerente, area = alocacao_por_projeto.get(p.id, (None, None))
+        cliente = cliente_por_projeto.get(p.id)
+
+        resultado.append({
+            "id": p.id,
+            "nome": p.nome,
+            "cliente": cliente or p.nome,
+            "area": area or "—",
+            "gerente": gerente or "—",
+            "status": _STATUS_VISUAL.get(status_cronograma, "sem-dados"),
+            "status_projeto": p.status,
+            "progresso": _PCT_FAIXA_MEIO.get(pct, 0),
+        })
+
+    return resultado
+
 
 @router.get("/", response_model=List[ProjetoExternoRead], summary="Listar projetos")
 async def list_projetos(

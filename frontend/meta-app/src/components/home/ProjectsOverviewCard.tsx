@@ -1,8 +1,14 @@
 import Link from "next/link";
-import { projectsOverview } from "@/mocks/home";
 import { Card, CardEyebrow } from "@/components/ui/Card";
+import type { HomeData } from "@/types/home";
 
-export function ProjectsOverviewCard() {
+/**
+ * Saíram daqui, por não terem origem no banco: "+3 este mês" (não há data de
+ * criação em projeto_externo), "96% no prazo" (não há prazo previsto para
+ * comparar com a entrega) e "Capacidade do time: 68%" (não existe registro de
+ * capacidade ou alocação percentual em lugar nenhum).
+ */
+export function ProjectsOverviewCard({ overview }: { overview: HomeData["projects_overview"] }) {
   return (
     <Card>
       <CardEyebrow>PROJETOS</CardEyebrow>
@@ -10,33 +16,20 @@ export function ProjectsOverviewCard() {
 
       <div className="mt-5 grid grid-cols-2 gap-3">
         <div>
-          <p className="text-3xl font-bold text-blue-600">{projectsOverview.active}</p>
+          <p className="text-3xl font-bold text-blue-600">{overview.active}</p>
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Ativos</p>
-          <p className="mt-0.5 text-xs font-medium text-emerald-600">
-            {projectsOverview.activeDelta}
-          </p>
         </div>
         <div>
-          <p className="text-3xl font-bold text-slate-900">{projectsOverview.completed}</p>
+          <p className="text-3xl font-bold text-slate-900">{overview.completed}</p>
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
             Concluídos
           </p>
-          <p className="mt-0.5 text-xs font-medium text-emerald-600">
-            {projectsOverview.completedOnTimeLabel}
-          </p>
         </div>
-      </div>
-
-      <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-sm">
-        <span className="text-slate-500">{projectsOverview.teamCapacityLabel}</span>
-        <span className="font-semibold text-slate-800">
-          {projectsOverview.teamCapacityPercentage}%
-        </span>
       </div>
 
       <Link
         href="/external-projects"
-        className="mt-4 inline-flex text-sm font-semibold text-blue-600 hover:text-blue-700"
+        className="mt-5 inline-flex border-t border-slate-100 pt-4 text-sm font-semibold text-blue-600 hover:text-blue-700"
       >
         Ver tudo →
       </Link>

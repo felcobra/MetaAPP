@@ -102,12 +102,12 @@ function StageRow({ stage }: { stage: CommercialFunnelStage }) {
         <p className="truncate text-xs font-extrabold leading-tight text-white @xl:text-sm @2xl:text-[15px]">
           {stage.label}
         </p>
+        {/* A variacao percentual por fase saiu: exigiria comparar com o
+            periodo anterior, e oportunidade.criado_em e nullable numa parte
+            relevante dos registros importados do Pipefy. */}
         <div className="mt-0.5 flex items-baseline justify-between gap-2 @xl:gap-3">
           <span className="truncate text-[11px] text-slate-400 @xl:text-[13px] @2xl:text-sm">
-            {stage.value} oportunidades
-          </span>
-          <span className="shrink-0 whitespace-nowrap text-[11px] font-bold text-amber-400 @xl:text-[13px] @2xl:text-sm">
-            ? {stage.deltaPercentage}%
+            {stage.value} {stage.value === 1 ? "oportunidade" : "oportunidades"}
           </span>
         </div>
       </div>

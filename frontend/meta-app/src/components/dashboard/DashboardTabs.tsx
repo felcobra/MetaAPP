@@ -6,10 +6,10 @@ import type {
   DashboardTabId,
   DeliveriesPoint,
   EngagementItem,
+  DashboardTab,
   KpiCard,
   ProposalFunnelStage,
 } from "@/types/dashboard";
-import { dashboardTabs } from "@/mocks/dashboard";
 import { Tabs } from "@/components/ui/Tabs";
 import { Card, CardEyebrow } from "@/components/ui/Card";
 import { KpiCardRow } from "./KpiCardRow";
@@ -17,6 +17,14 @@ import { DeliveriesLineChart } from "./DeliveriesLineChart";
 import { EngagementList } from "./EngagementList";
 import { ProposalFunnelBars } from "./ProposalFunnelBars";
 import { ActiveProjectsTable } from "./ActiveProjectsTable";
+
+// Rótulos de aba são interface, não dado: ficam aqui em vez de virem da API.
+const ABAS: DashboardTab[] = [
+  { id: "geral", label: "Geral" },
+  { id: "projetos", label: "Projetos" },
+  { id: "pessoas", label: "Pessoas" },
+  { id: "comercial", label: "Comercial" },
+];
 
 interface DashboardTabsProps {
   kpiCards: KpiCard[];
@@ -38,7 +46,7 @@ export function DashboardTabs({
   return (
     <div>
       <Tabs
-        options={dashboardTabs}
+        options={ABAS}
         value={tab}
         onChange={(id) => setTab(id as DashboardTabId)}
         className="mb-6"

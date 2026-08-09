@@ -16,13 +16,17 @@ import logging
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, desc
 
 from app.core.database import get_db
 from app.api.deps import get_current_user
-from app.models.hr import Membro, Coordenacao, MembroProjeto, MembroCoordenacao, MembroPerfilMetaapp
+from app.models.hr import (
+    Cargo, Membro, Celula, Coordenacao, MembroProjeto, MembroCelula,
+    MembroCoordenacao, MembroPerfilMetaapp,
+)
 from app.models.project_tracking import ProjetoExterno, AcompanhamentoProjeto
-from app.models.financial import ContratoPagamento, Contrato
+from app.models.financial import Cliente, ContratoPagamento, Contrato
+from app.models.service import Servico
 from app.models.commercial import Oportunidade, Lead
 
 logger = logging.getLogger("metaapp")
@@ -32,6 +36,18 @@ _PROJETO_INATIVO = ("finalizado",)  # status que tiram o projeto da contagem de 
 
 _PCT_FAIXA_MEIO = {
     "0-20%": 10, "21-40%": 30, "41-60%": 50, "61-80%": 70, "81-100%": 90,
+}
+
+# acompanhamento_projeto.status_cronograma guarda o texto que o consultor
+# escolheu no PAPE. Traduzido aqui para os estados que a tabela colore.
+# Os quatro valores foram conferidos contra o enum real do banco — faltar um
+# deles aqui faria o projeto cair no fallback "sem-dados", ou seja, um projeto
+# concluído apareceria como "sem PAPE respondido".
+_STATUS_VISUAL = {
+    "Dentro do prazo": "no-prazo",
+    "Com risco de atraso": "atencao",
+    "Atrasado": "atrasado",
+    "Concluido": "concluido",
 }
 
 
@@ -84,16 +100,43 @@ async def get_dashboard(
 
     total_leads = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
 
+    # Contagens que alimentam a faixa "sistema conectado" da Home. Ficam aqui,
+    # e não num endpoint próprio, para a Home resolver a faixa inteira numa
+    # chamada só.
+    async def _contar(model) -> int:
+        return (await db.execute(select(func.count(model.id)))).scalar() or 0
+
+    total_celulas = await _contar(Celula)
+    total_coordenacoes = await _contar(Coordenacao)
+    total_servicos = await _contar(Servico)
+    total_clientes = await _contar(Cliente)
+
+    oportunidades_ativas = oportunidades.get("ativo", 0)
+
+    valor_contratos = (await db.execute(
+        select(func.sum(Contrato.valor_total))
+    )).scalar() or 0
+
     return {
-        "rh": {"total_membros": total_membros},
+        "rh": {
+            "total_membros": total_membros,
+            "total_celulas": total_celulas,
+            "total_coordenacoes": total_coordenacoes,
+        },
         "projetos": {
             "total": total_projetos,
             "ativos": projetos_ativos,
             "total_acompanhamentos": total_acompanhamentos,
         },
+        "servicos": {"total": total_servicos},
+        "clientes": {"total": total_clientes},
         "financeiro": financeiro,
-        "contratos": {"total": total_contratos},
-        "crm": {"total_leads": total_leads, "oportunidades": oportunidades},
+        "contratos": {"total": total_contratos, "valor_total": float(valor_contratos)},
+        "crm": {
+            "total_leads": total_leads,
+            "oportunidades": oportunidades,
+            "oportunidades_ativas": oportunidades_ativas,
+        },
     }
 
 
@@ -124,6 +167,13 @@ async def get_home_data(
         select(func.count(Oportunidade.id)).where(Oportunidade.status_terminal == "ativo")
     )).scalar() or 0
 
+    # Só as oportunidades já precificadas entram na soma; valor_fechado é
+    # nullable, então este número é um piso, não o pipeline inteiro.
+    valor_em_neg = (await db.execute(
+        select(func.sum(Oportunidade.valor_fechado))
+        .where(Oportunidade.status_terminal == "ativo")
+    )).scalar() or 0
+
     projetos_ativos = (await db.execute(
         select(func.count(ProjetoExterno.id))
         .where(ProjetoExterno.status.notin_(_PROJETO_INATIVO))
@@ -146,10 +196,31 @@ async def get_home_data(
         .order_by(func.extract("day", MembroPerfilMetaapp.data_nascimento))
         .limit(5)
     )
+    # A área de cada aniversariante sai de uma consulta só, em vez de uma por
+    # pessoa: coordenação quando existe, senão célula.
+    aniv_membros = [m for m, _ in aniv_rows]
+    areas: dict[int, str] = {}
+    if aniv_membros:
+        ids = [m.id for m in aniv_membros]
+        for assoc, nome_model, fk in (
+            (MembroCelula, Celula, MembroCelula.celula_id),
+            (MembroCoordenacao, Coordenacao, MembroCoordenacao.coordenacao_id),
+        ):
+            rows = await db.execute(
+                select(assoc.membro_id, nome_model.nome)
+                .join(nome_model, fk == nome_model.id)
+                .where(assoc.membro_id.in_(ids))
+            )
+            # Coordenação roda depois e sobrescreve a célula de propósito:
+            # é o rótulo mais específico das duas.
+            areas.update({mid: nome for mid, nome in rows})
+
     aniversariantes = []
-    for m, _perfil in aniv_rows:
+    for m in aniv_membros:
         initials = "".join(p[0].upper() for p in m.nome.split()[:2])
-        aniversariantes.append({"initials": initials, "name": m.nome, "department": ""})
+        aniversariantes.append(
+            {"initials": initials, "name": m.nome, "department": areas.get(m.id, "")}
+        )
 
     # Reconhecimentos (membros com destaque_texto preenchido em membro_perfil_metaapp)
     rec_rows = await db.execute(
@@ -175,6 +246,7 @@ async def get_home_data(
             "fat_atual": float(fat_atual),
             "fat_total": float(fat_total),
             "em_negociacao_count": total_em_neg,
+            "em_negociacao_valor": float(valor_em_neg),
         },
         "sales_funnel": [
             {"label": "Leads", "value": total_leads, "percentage": 100},
@@ -243,10 +315,13 @@ async def get_deliveries_by_month(
         )
         .where(AcompanhamentoProjeto.data_resposta.isnot(None))
         .group_by("mes")
-        .order_by("mes")
+        # Ordena do mais recente para o mais antigo antes de cortar: com
+        # order_by("mes") crescente, o LIMIT devolvia os 12 meses mais
+        # antigos do histórico em vez dos 12 últimos.
+        .order_by(desc("mes"))
         .limit(12)
     )
-    return [{"month": row.mes, "value": row.total} for row in rows]
+    return [{"month": row.mes, "value": row.total} for row in reversed(rows.all())]
 
 
 @router.get("/engagement-by-area", summary="Engajamento por área (satisfação média por coordenação)")
@@ -287,6 +362,14 @@ async def get_active_projects(
     """Retorna projetos ativos no formato que a tabela do Dashboard consome.
     Progresso estimado pelo pct_conclusao do acompanhamento mais recente;
     cliente obtido via Contrato → Cliente (projeto_externo pode não ter contrato).
+
+    v4 — Batching: a versão anterior fazia 1 query para listar os projetos e
+    depois 3 queries POR PROJETO (acompanhamento, gerente, contrato) dentro de
+    um loop sequencial — até 61 round-trips ao banco numa única requisição.
+    Sob o volume real de produção (milhares de linhas em membro_projeto e
+    contrato) isso estourava o timeout do proxy e a API respondia 503. Agora
+    são só 4 queries no total: os projetos, e uma consulta em lote para cada
+    satélite (acompanhamentos, alocações, contratos), casadas em Python.
     """
     r = await db.execute(
         select(ProjetoExterno)
@@ -295,37 +378,68 @@ async def get_active_projects(
         .limit(20)
     )
     projetos = r.scalars().all()
+    projeto_ids = [p.id for p in projetos]
+
+    if not projeto_ids:
+        return []
+
+    # ── Último acompanhamento por projeto (1 query em lote) ─────────────────
+    acomp_rows = (await db.execute(
+        select(
+            AcompanhamentoProjeto.projeto_externo_id,
+            AcompanhamentoProjeto.pct_conclusao,
+            AcompanhamentoProjeto.status_cronograma,
+        )
+        .where(AcompanhamentoProjeto.projeto_externo_id.in_(projeto_ids))
+        .order_by(
+            AcompanhamentoProjeto.projeto_externo_id,
+            desc(AcompanhamentoProjeto.data_resposta),
+        )
+    )).all()
+    ultimo_acomp: dict[int, tuple] = {}
+    for row in acomp_rows:
+        ultimo_acomp.setdefault(row.projeto_externo_id, (row.pct_conclusao, row.status_cronograma))
+
+    # ── Gerente por projeto (1 query em lote) ───────────────────────────────
+    # Alocações com cargo de gerência vêm primeiro; se o projeto não tiver
+    # nenhuma, cai para qualquer membro ainda alocado (data_saida NULL).
+    gerente_rows = (await db.execute(
+        select(MembroProjeto.projeto_externo_id, Membro.nome, Cargo.nome.like("Gerente%").label("eh_gerente"))
+        .join(Membro, Membro.id == MembroProjeto.membro_id)
+        .outerjoin(Cargo, Cargo.id == MembroProjeto.cargo_id)
+        .where(
+            MembroProjeto.projeto_externo_id.in_(projeto_ids),
+            MembroProjeto.data_saida.is_(None),
+        )
+        .order_by(MembroProjeto.projeto_externo_id, desc("eh_gerente"), Membro.id)
+    )).all()
+    gerente_por_projeto: dict[int, str] = {}
+    for row in gerente_rows:
+        gerente_por_projeto.setdefault(row.projeto_externo_id, row.nome)
+
+    # ── Cliente via Contrato → Cliente (1 query em lote) ────────────────────
+    contrato_rows = (await db.execute(
+        select(Contrato.projeto_externo_id, Cliente.nome)
+        .join(Contrato.cliente)
+        .where(Contrato.projeto_externo_id.in_(projeto_ids))
+        .order_by(Contrato.projeto_externo_id, Contrato.id)
+    )).all()
+    cliente_por_projeto: dict[int, str] = {}
+    for row in contrato_rows:
+        cliente_por_projeto.setdefault(row.projeto_externo_id, row.nome)
 
     result = []
     for p in projetos:
-        ultimo_acomp = (await db.execute(
-            select(AcompanhamentoProjeto.pct_conclusao)
-            .where(AcompanhamentoProjeto.projeto_externo_id == p.id)
-            .order_by(AcompanhamentoProjeto.data_resposta.desc())
-            .limit(1)
-        )).scalar()
-        prog = _PCT_FAIXA_MEIO.get(ultimo_acomp, 0)
-
-        cliente_nome = (await db.execute(
-            select(Contrato)
-            .join(Contrato.cliente)
-            .where(Contrato.projeto_externo_id == p.id)
-            .limit(1)
-        )).scalar_one_or_none()
-        manager = cliente_nome.cliente.nome if cliente_nome and cliente_nome.cliente else "—"
-
-        if prog >= 70:
-            visual_status = "no-prazo"
-        elif prog >= 40:
-            visual_status = "atencao"
-        else:
-            visual_status = "atrasado"
-
+        pct, status_cronograma = ultimo_acomp.get(p.id, (None, None))
         result.append({
             "project": p.nome,
-            "manager": manager,
-            "status": visual_status,
-            "progress": prog,
+            "manager": gerente_por_projeto.get(p.id) or "—",
+            "client": cliente_por_projeto.get(p.id) or "—",
+            # O status do prazo é registrado no acompanhamento; derivá-lo do
+            # percentual (o que era feito aqui) marcava como "atrasado"
+            # qualquer projeto em fase inicial, mesmo dentro do prazo.
+            "status": _STATUS_VISUAL.get(status_cronograma, "sem-dados"),
+            "progress": _PCT_FAIXA_MEIO.get(pct, 0),
         })
     return result
 

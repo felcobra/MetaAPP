@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -17,6 +18,7 @@ export function LoginForm() {
   const { login } = useAuth();
 
   const [showPassword, setShowPassword] = useState(false);
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,7 +56,7 @@ export function LoginForm() {
         Use seu e-mail corporativo para continuar.
       </p>
 
-      <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+      <form className="mt-8 space-y-5" method="post" onSubmit={handleSubmit}>
         <div>
           <Label htmlFor="email">E-mail corporativo</Label>
           <Input
@@ -118,8 +120,17 @@ export function LoginForm() {
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-xs text-slate-400">
-        Para criar sua conta, solicite o acesso ao seu gestor direto.
+      <p className="mt-4 text-center text-sm">
+        <Link href="/esqueci-senha" className="font-medium text-slate-500 hover:text-blue-600">
+          Esqueci minha senha
+        </Link>
+      </p>
+
+      <p className="mt-2 text-center text-sm text-slate-500">
+        Primeiro acesso?{" "}
+        <Link href="/cadastro" className="font-semibold text-blue-600 hover:text-blue-700">
+          Criar conta
+        </Link>
       </p>
     </div>
   );

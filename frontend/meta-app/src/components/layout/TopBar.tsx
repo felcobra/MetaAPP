@@ -2,8 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Menu, PanelLeftClose, Search, Bell, LogOut } from "lucide-react";
-import { currentUser } from "@/mocks/session";
+import { Menu, PanelLeftClose, Search, LogOut } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import LogoMark from "../../../public/logo.png";
 import { useAuth } from "@/lib/auth-context";
@@ -57,10 +56,10 @@ export function TopBar({ pageTitle, sidebarExpanded, onMenuClick }: TopBarProps)
           !
         </button>
         <Link href="/profile" className="hidden min-w-0 items-center gap-2.5 rounded-full border border-slate-200 px-3 py-2 transition-colors hover:bg-slate-50 sm:flex">
-          <Avatar initials={currentUser.initials} size="sm" className="bg-gradient-to-r from-sky-400 to-blue-600 text-white" />
+          <Avatar initials={displayInitials} size="sm" className="bg-gradient-to-r from-sky-400 to-blue-600 text-white" />
           <div className="min-w-0 leading-tight">
-            <p className="truncate text-sm font-semibold text-slate-900">{currentUser.name}</p>
-            <p className="truncate text-xs text-slate-400">{currentUser.role}</p>
+            <p className="truncate text-sm font-semibold text-slate-900">{displayName}</p>
+            <p className="truncate text-xs text-slate-400">{displayRole}</p>
           </div>
         </Link>
 

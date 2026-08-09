@@ -1,9 +1,65 @@
 import Link from "next/link";
-import { ChevronRight, Network } from "lucide-react";
-import { connectedSystemSteps } from "@/mocks/home";
+import { Briefcase, FileText, Users, Wallet, Building, FolderKanban, ChevronRight, Network } from "lucide-react";
 import { Card, CardEyebrow } from "@/components/ui/Card";
+import { brl } from "@/lib/format";
+import type { ConnectedSystemStep, DashboardGeral } from "@/types/home";
 
-export function ConnectedSystemFlow() {
+function montarBlocos(d: DashboardGeral): ConnectedSystemStep[] {
+  return [
+    {
+      icon: Users,
+      value: String(d.rh.total_membros),
+      label: "Pessoas",
+      helper: `${d.rh.total_celulas} células · ${d.rh.total_coordenacoes} coord.`,
+      href: "/orgchart",
+      iconClassName: "bg-gradient-to-br from-sky-400 to-blue-600",
+    },
+    {
+      icon: FileText,
+      value: String(d.servicos.total),
+      label: "Serviços",
+      helper: "Carta Técnica",
+      href: "/portfolio",
+      iconClassName: "bg-gradient-to-br from-rose-300 to-rose-500",
+    },
+    {
+      icon: FolderKanban,
+      value: String(d.projetos.total),
+      label: "Projetos",
+      helper: `${d.projetos.ativos} ativos`,
+      href: "/external-projects",
+      iconClassName: "bg-gradient-to-br from-amber-300 to-amber-500",
+    },
+    {
+      icon: Building,
+      value: String(d.clientes.total),
+      label: "Clientes",
+      helper: `${d.crm.oportunidades_ativas} oport. abertas`,
+      href: "/commercial",
+      iconClassName: "bg-gradient-to-br from-cyan-300 to-cyan-500",
+    },
+    {
+      icon: Briefcase,
+      value: String(d.contratos.total),
+      label: "Contratos",
+      helper: brl(d.contratos.valor_total),
+      href: "/commercial",
+      iconClassName: "bg-gradient-to-br from-violet-300 to-violet-500",
+    },
+    {
+      icon: Wallet,
+      value: brl(d.financeiro.total_recebido),
+      label: "Financeiro",
+      helper: `${brl(d.financeiro.total_a_receber)} a receber`,
+      href: "/dashboards",
+      iconClassName: "bg-gradient-to-br from-emerald-300 to-emerald-500",
+    },
+  ];
+}
+
+export function ConnectedSystemFlow({ dados }: { dados: DashboardGeral }) {
+  const blocos = montarBlocos(dados);
+
   return (
     <div className="mb-6">
       <div className="mb-4 flex items-center gap-3">
@@ -14,7 +70,7 @@ export function ConnectedSystemFlow() {
       </div>
 
       <Card>
-        <CardEyebrow>FATURAMENTO</CardEyebrow>
+        <CardEyebrow>VISÃO GERAL</CardEyebrow>
         <p className="mt-2 max-w-3xl text-sm text-slate-600">
           Cada bloco é uma porta de entrada. O fluxo lê-se da esquerda para a direita:{" "}
           <span className="font-semibold text-slate-800">
@@ -25,7 +81,7 @@ export function ConnectedSystemFlow() {
         </p>
 
         <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6 lg:gap-5">
-          {connectedSystemSteps.map((step, index) => (
+          {blocos.map((step, index) => (
             <Link
               key={step.label}
               href={step.href}
@@ -39,7 +95,7 @@ export function ConnectedSystemFlow() {
                 <p className="text-sm font-semibold leading-snug text-slate-700">{step.label}</p>
                 <p className="text-xs leading-snug text-slate-400">{step.helper}</p>
               </div>
-              {index < connectedSystemSteps.length - 1 ? (
+              {index < blocos.length - 1 ? (
                 <ChevronRight className="absolute top-1/2 -right-4 hidden h-4 w-4 -translate-y-1/2 text-slate-300 lg:block" />
               ) : null}
             </Link>
