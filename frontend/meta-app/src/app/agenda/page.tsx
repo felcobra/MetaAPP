@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { AppShell } from "@/components/layout/AppShell";
 import { AgendaPlanner } from "@/components/agenda/AgendaPlanner";
 
 export const metadata: Metadata = {
@@ -8,9 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function AgendaPage() {
-  return (
-    <AppShell pageTitle="Agenda TI">
-      <AgendaPlanner />
-    </AppShell>
-  );
+  return <AgendaPlanner />;
 }
