@@ -9,26 +9,24 @@ import { ExternalProjectCard } from "./ExternalProjectCard";
 
 const filterOptions: { id: ExternalProjectFilter; label: string }[] = [
   { id: "todos", label: "Todos" },
-  { id: "no-prazo", label: "No prazo" },
-  { id: "atencao", label: "Atenção" },
-  { id: "atrasado", label: "Atrasado" },
-  { id: "concluido", label: "Concluído" },
-  // Projeto sem PAPE respondido não cai em nenhum dos três: sem esta aba,
-  // ele só apareceria em "Todos".
-  { id: "sem-dados", label: "Sem PAPE" },
+  { id: "ativo", label: "Em execução" },
+  { id: "finalizado", label: "Concluídos" },
+  { id: "pausado", label: "Pausados" },
 ];
 
 export function ExternalProjectsBoard({ projects }: { projects: ExternalProject[] }) {
   const [filter, setFilter] = useState<ExternalProjectFilter>("todos");
   const [query, setQuery] = useState("");
 
-  const noPrazoCount = projects.filter((project) => project.status === "no-prazo").length;
-  const atencaoCount = projects.filter((project) => project.status === "atencao").length;
+  const emExecucaoCount = projects.filter((project) => project.status === "ativo").length;
+  const concluidoCount = projects.filter((project) => project.status === "finalizado").length;
 
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => {
       const matchesFilter = filter === "todos" || project.status === filter;
-      const matchesQuery = project.client.toLowerCase().includes(query.toLowerCase());
+      const termo = query.toLowerCase();
+      const matchesQuery =
+        project.name.toLowerCase().includes(termo) || project.client.toLowerCase().includes(termo);
       return matchesFilter && matchesQuery;
     });
   }, [filter, query, projects]);
@@ -64,15 +62,15 @@ export function ExternalProjectsBoard({ projects }: { projects: ExternalProject[
         </Card>
         <Card className="flex items-center justify-between">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            No prazo
+            Em execução
           </span>
-          <span className="text-2xl font-bold text-emerald-600">{noPrazoCount}</span>
+          <span className="text-2xl font-bold text-blue-600">{emExecucaoCount}</span>
         </Card>
         <Card className="flex items-center justify-between">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Em atenção
+            Concluídos
           </span>
-          <span className="text-2xl font-bold text-amber-500">{atencaoCount}</span>
+          <span className="text-2xl font-bold text-emerald-600">{concluidoCount}</span>
         </Card>
       </div>
 

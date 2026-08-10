@@ -1,7 +1,7 @@
 import type { ExternalProject } from "@/types/projects";
 import { Card } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/ProgressBar";
-import { ProjectStatusBadge, projectStatusBarColor } from "@/components/shared/ProjectStatusBadge";
+import { ProjectLifecycleBadge, projectLifecycleBarColor } from "@/components/shared/ProjectStatusBadge";
 
 export function ExternalProjectCard({ project }: { project: ExternalProject }) {
   return (
@@ -10,11 +10,11 @@ export function ExternalProjectCard({ project }: { project: ExternalProject }) {
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-navy-950 text-sm font-bold text-white">
           {project.code}
         </span>
-        <ProjectStatusBadge status={project.status} />
+        <ProjectLifecycleBadge status={project.status} />
       </div>
 
-      <h3 className="mt-4 line-clamp-2 min-w-0 text-xl font-bold leading-tight text-slate-900">{project.client}</h3>
-      <p className="mt-1 truncate text-sm text-slate-400">{project.area}</p>
+      <h3 className="mt-4 line-clamp-2 min-w-0 text-xl font-bold leading-tight text-slate-900">{project.name}</h3>
+      <p className="mt-1 truncate text-sm text-slate-400">{project.client}{project.area ? ` · ${project.area}` : ""}</p>
 
       <div className="mt-5 flex min-w-0 items-center justify-between gap-3 text-sm">
         <span className="flex min-w-0 items-center gap-1.5 text-slate-500">
@@ -27,7 +27,7 @@ export function ExternalProjectCard({ project }: { project: ExternalProject }) {
         <ProgressBar
           value={project.progress}
           gradient={false}
-          barClassName={projectStatusBarColor(project.status)}
+          barClassName={projectLifecycleBarColor(project.status)}
         />
       </div>
     </Card>

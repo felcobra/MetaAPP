@@ -7,7 +7,6 @@ import {
   LayoutGrid,
   Network,
   ShoppingBag,
-  Users,
   Wallet,
 } from "lucide-react";
 import type { NavItem } from "@/types/nav";
@@ -17,7 +16,6 @@ export const primaryNav: NavItem[] = [
   { label: "Formulários", href: "/forms", icon: ClipboardList },
   { label: "Dashboards", href: "/dashboards", icon: BarChart3 },
   { label: "Agenda TI", href: "/agenda", icon: CalendarDays },
-  { label: "Mapa & Pessoas", href: "/people", icon: Users },
   { label: "Projetos externos", href: "/external-projects", icon: LayoutGrid },
   { label: "Organograma", href: "/orgchart", icon: Network },
   { label: "Serviços & Portfólio", href: "/portfolio", icon: ShoppingBag },

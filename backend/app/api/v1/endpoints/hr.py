@@ -152,69 +152,6 @@ async def list_membros(
     return r.scalars().all()
 
 
-@router.get("/diretorio", summary="Membros com célula, coordenação e cargo resolvidos (Mapa & Pessoas)")
-async def get_diretorio(
-    db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
-):
-    """Tudo que a tela Mapa & Pessoas precisa: membros ativos com célula(s),
-    coordenação(ões) e cargo(s) já resolvidos em nome — em lote (4 queries no
-    total), não por membro. Mesmo motivo do batching em /projetos/board:
-    resolver isso membro a membro seria 1 + 3*N queries sequenciais.
-    """
-    membros = (await db.execute(
-        select(Membro)
-        .outerjoin(MembroPerfilMetaapp, MembroPerfilMetaapp.membro_id == Membro.id)
-        .where(
-            (MembroPerfilMetaapp.ativo.is_(None)) | (MembroPerfilMetaapp.ativo == True)
-        )
-        .order_by(Membro.nome)
-    )).scalars().all()
-    membro_ids = [m.id for m in membros]
-
-    if not membro_ids:
-        return []
-
-    celula_rows = (await db.execute(
-        select(MembroCelula.membro_id, Celula.id, Celula.nome, Celula.sigla)
-        .join(Celula, Celula.id == MembroCelula.celula_id)
-        .where(MembroCelula.membro_id.in_(membro_ids))
-    )).all()
-    celulas_por_membro: dict[int, list[dict]] = {}
-    for membro_id, cid, nome, sigla in celula_rows:
-        celulas_por_membro.setdefault(membro_id, []).append({"id": cid, "nome": nome, "sigla": sigla})
-
-    coord_rows = (await db.execute(
-        select(MembroCoordenacao.membro_id, Coordenacao.id, Coordenacao.nome, Coordenacao.sigla)
-        .join(Coordenacao, Coordenacao.id == MembroCoordenacao.coordenacao_id)
-        .where(MembroCoordenacao.membro_id.in_(membro_ids))
-    )).all()
-    coord_por_membro: dict[int, list[dict]] = {}
-    for membro_id, cid, nome, sigla in coord_rows:
-        coord_por_membro.setdefault(membro_id, []).append({"id": cid, "nome": nome, "sigla": sigla})
-
-    cargo_rows = (await db.execute(
-        select(MembroCargo.membro_id, Cargo.id, Cargo.nome)
-        .join(Cargo, Cargo.id == MembroCargo.cargo_id)
-        .where(MembroCargo.membro_id.in_(membro_ids))
-    )).all()
-    cargo_por_membro: dict[int, list[dict]] = {}
-    for membro_id, cid, nome in cargo_rows:
-        cargo_por_membro.setdefault(membro_id, []).append({"id": cid, "nome": nome})
-
-    return [
-        {
-            "id": m.id,
-            "nome": m.nome,
-            "email": m.email,
-            "celulas": celulas_por_membro.get(m.id, []),
-            "coordenacoes": coord_por_membro.get(m.id, []),
-            "cargos": cargo_por_membro.get(m.id, []),
-        }
-        for m in membros
-    ]
-
-
 @router.get("/aniversariantes", summary="Aniversariantes do mês corrente")
 async def get_aniversariantes(
     mes: Optional[int] = Query(None, ge=1, le=12, description="Mês (1-12). Default: mês atual"),
