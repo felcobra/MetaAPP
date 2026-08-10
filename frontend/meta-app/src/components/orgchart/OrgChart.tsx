@@ -75,7 +75,7 @@ export function OrgChart({ root }: { root: OrgNodeData }) {
         </div>
       </div>
 
-      {panelNode ? <OrgMembersPanel node={panelNode} onClose={clearSelection} /> : null}
+      {panelNode ? <OrgMembersPanel key={panelNode.id} node={panelNode} onClose={clearSelection} /> : null}
 
       <div className="pointer-events-none absolute bottom-5 left-1/2 max-w-[calc(100%-2rem)] -translate-x-1/2 truncate rounded-lg bg-slate-900/90 px-4 py-2 text-xs font-medium text-white">
         Arraste para navegar · use a roda para aplicar zoom

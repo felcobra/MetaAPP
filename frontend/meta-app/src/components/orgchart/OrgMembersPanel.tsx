@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
-import { X } from "lucide-react";
-import type { OrgNode as OrgNodeData } from "@/types/orgchart";
+import { useState, type ReactNode } from "react";
+import { ArrowLeft, X } from "lucide-react";
+import type { OrgNode as OrgNodeData, OrgPerson } from "@/types/orgchart";
 import { Avatar } from "@/components/ui/Avatar";
 import { CardEyebrow } from "@/components/ui/Card";
 import { cn } from "@/lib/cn";
@@ -56,25 +56,54 @@ function ContactRow({ label, value }: { label: string; value?: string }) {
   );
 }
 
+/** Corpo do card de 1 pessoa — reaproveitado tanto para o nó de posição
+ * única quanto para o drill-down de alguém clicado dentro de um time. */
+function PersonDetail({ person }: { person: OrgPerson }) {
+  return (
+    <>
+      <Avatar
+        initials={person.name.slice(0, 2).toUpperCase()}
+        photoUrl={person.photoUrl}
+        size="lg"
+        className="mx-auto h-28 w-28"
+      />
+      <p className="mt-5 break-words text-2xl font-bold text-slate-900">{person.name}</p>
+      <p className="mt-1 break-words text-base text-slate-500">{person.role}</p>
+
+      <div className="mt-6 space-y-4 border-t border-slate-100 pt-5 text-left">
+        <ContactRow label="E-mail" value={person.email} />
+        <ContactRow label="Telefone" value={person.phone} />
+      </div>
+    </>
+  );
+}
+
 export function OrgMembersPanel({ node, onClose }: OrgMembersPanelProps) {
   const { person, team } = node;
+  // Pessoa aberta a partir da grade de um time — drill-down dentro do
+  // próprio painel, sem fechar o card do time.
+  const [selectedMember, setSelectedMember] = useState<OrgPerson | null>(null);
+
+  if (selectedMember) {
+    return (
+      <PanelShell onClose={onClose} className="w-[340px] max-w-full p-7 text-center">
+        <button
+          type="button"
+          onClick={() => setSelectedMember(null)}
+          className="absolute left-3 top-3 flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Voltar
+        </button>
+        <PersonDetail person={selectedMember} />
+      </PanelShell>
+    );
+  }
 
   if (person) {
     return (
       <PanelShell onClose={onClose} className="w-[340px] max-w-full p-7 text-center">
-        <Avatar
-          initials={person.name.slice(0, 2).toUpperCase()}
-          photoUrl={person.photoUrl}
-          size="lg"
-          className="mx-auto h-28 w-28"
-        />
-        <p className="mt-5 break-words text-2xl font-bold text-slate-900">{person.name}</p>
-        <p className="mt-1 break-words text-base text-slate-500">{person.role}</p>
-
-        <div className="mt-6 space-y-4 border-t border-slate-100 pt-5 text-left">
-          <ContactRow label="E-mail" value={person.email} />
-          <ContactRow label="Telefone" value={person.phone} />
-        </div>
+        <PersonDetail person={person} />
       </PanelShell>
     );
   }
@@ -89,7 +118,7 @@ export function OrgMembersPanel({ node, onClose }: OrgMembersPanelProps) {
 
       <div className="mt-5 grid grid-cols-2 gap-3 @[420px]:grid-cols-3 @[560px]:grid-cols-4">
         {team.members.map((member) => (
-          <OrgMemberCard key={member.id} member={member} />
+          <OrgMemberCard key={member.id} member={member} onSelect={() => setSelectedMember(member)} />
         ))}
       </div>
     </PanelShell>
