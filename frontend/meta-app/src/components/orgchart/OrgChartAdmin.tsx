@@ -74,7 +74,7 @@ function AdminNoRow({
           )}
           {no.equipe && (
             <span className="ml-1.5 text-xs font-normal text-slate-400">
-              — {no.equipe.cargo_nome}
+              — {no.equipe.cargo_nome ?? "seleção manual"}
               {no.equipe.coordenacao_nome ? ` · ${no.equipe.coordenacao_nome}` : ""} (
               {no.equipe.membros.length} {no.equipe.membros.length === 1 ? "pessoa" : "pessoas"})
             </span>
@@ -149,6 +149,7 @@ function AdminNoRow({
             membroId: no.membro?.id ?? null,
             cargoId: no.equipe?.cargo_id ?? null,
             coordenacaoId: no.equipe?.coordenacao_id ?? null,
+            membroIdsManual: no.equipe?.membro_ids_manual ?? [],
           }}
           onSuccess={() => {
             setShowEditModal(false);

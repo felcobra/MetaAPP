@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { X, Loader2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { X, Loader2, Search } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 import { Button } from "@/components/ui/Button";
@@ -34,6 +34,8 @@ interface NodeFormModalProps {
     membroId: number | null;
     cargoId: number | null;
     coordenacaoId: number | null;
+    /** IDs adicionados à mão ao time (não vêm do cargo) — pré-marca o multi-select. */
+    membroIdsManual: number[];
   };
   onSuccess: () => void;
   onClose: () => void;
@@ -48,7 +50,9 @@ export function NodeFormModal({
   onClose,
 }: NodeFormModalProps) {
   const [titulo, setTitulo] = useState(editNo?.titulo ?? "");
-  const [modo, setModo] = useState<"pessoa" | "time">(editNo?.cargoId ? "time" : "pessoa");
+  const [modo, setModo] = useState<"pessoa" | "time">(
+    editNo?.cargoId || (editNo?.membroIdsManual.length ?? 0) > 0 ? "time" : "pessoa"
+  );
   const [membroId, setMembroId] = useState<string>(
     editNo?.membroId ? String(editNo.membroId) : ""
   );
@@ -56,6 +60,10 @@ export function NodeFormModal({
   const [coordenacaoId, setCoordenacaoId] = useState<string>(
     editNo?.coordenacaoId ? String(editNo.coordenacaoId) : ""
   );
+  const [membroIdsManual, setMembroIdsManual] = useState<Set<number>>(
+    () => new Set(editNo?.membroIdsManual ?? [])
+  );
+  const [buscaPessoa, setBuscaPessoa] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -65,10 +73,26 @@ export function NodeFormModal({
   const { data: coordenacoes, carregando: carregandoCoordenacoes } =
     useApi<CoordenacaoSimples[]>("/rh/coordenacoes");
 
+  const membrosFiltrados = useMemo(() => {
+    const termo = buscaPessoa.trim().toLowerCase();
+    const lista = membros ?? [];
+    if (!termo) return lista;
+    return lista.filter((m) => m.nome.toLowerCase().includes(termo));
+  }, [membros, buscaPessoa]);
+
+  function alternarMembroManual(id: number) {
+    setMembroIdsManual((atual) => {
+      const proximo = new Set(atual);
+      if (proximo.has(id)) proximo.delete(id);
+      else proximo.add(id);
+      return proximo;
+    });
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!titulo.trim()) return;
-    if (modo === "time" && !cargoId) return;
+    if (modo === "time" && !cargoId && membroIdsManual.size === 0) return;
 
     setSalvando(true);
     setErro(null);
@@ -77,13 +101,15 @@ export function NodeFormModal({
       modo === "time"
         ? {
             membro_id: null,
-            cargo_id: Number(cargoId),
-            coordenacao_id: coordenacaoId ? Number(coordenacaoId) : null,
+            cargo_id: cargoId ? Number(cargoId) : null,
+            coordenacao_id: cargoId && coordenacaoId ? Number(coordenacaoId) : null,
+            membro_ids_manual: Array.from(membroIdsManual),
           }
         : {
             membro_id: membroId ? Number(membroId) : null,
             cargo_id: null,
             coordenacao_id: null,
+            membro_ids_manual: [],
           };
 
     try {
@@ -120,7 +146,7 @@ export function NodeFormModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 p-7">
+      <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 p-7 max-h-[92vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-start justify-between gap-3 mb-5">
           <div>
@@ -180,7 +206,7 @@ export function NodeFormModal({
                     : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
                 )}
               >
-                Um time (por cargo)
+                Um time
               </button>
             </div>
           </div>
@@ -214,7 +240,7 @@ export function NodeFormModal({
             <>
               {/* Cargo do time */}
               <div>
-                <Label htmlFor="node-cargo">Cargo *</Label>
+                <Label htmlFor="node-cargo">Cargo (opcional)</Label>
                 {carregandoCargos ? (
                   <div className="flex h-12 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4">
                     <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
@@ -225,10 +251,9 @@ export function NodeFormModal({
                     id="node-cargo"
                     value={cargoId}
                     onChange={(e) => setCargoId(e.target.value)}
-                    required
                     className="h-12 w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 text-sm text-slate-700 outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                   >
-                    <option value="">Selecione o cargo…</option>
+                    <option value="">— Nenhum (só pessoas manuais abaixo) —</option>
                     {(cargos ?? []).map((c) => (
                       <option key={c.id} value={String(c.id)}>
                         {c.nome}
@@ -237,34 +262,84 @@ export function NodeFormModal({
                   </select>
                 )}
                 <p className="mt-1.5 text-xs text-slate-400">
-                  Todo mundo com esse cargo no RH entra automaticamente no card do time —
-                  nada é cadastrado pessoa a pessoa aqui.
+                  Todo mundo com esse cargo no RH entra automaticamente no card do time.
+                  Deixe em branco se o time não corresponde a nenhum cargo — aí é só escolher as
+                  pessoas manualmente abaixo.
                 </p>
               </div>
 
-              {/* Coordenação (refina) */}
+              {/* Coordenação (refina) — só faz sentido junto de um cargo */}
+              {cargoId && (
+                <div>
+                  <Label htmlFor="node-coordenacao">Coordenação (opcional, para refinar)</Label>
+                  {carregandoCoordenacoes ? (
+                    <div className="flex h-12 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4">
+                      <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+                      <span className="text-sm text-slate-400">Carregando coordenações…</span>
+                    </div>
+                  ) : (
+                    <select
+                      id="node-coordenacao"
+                      value={coordenacaoId}
+                      onChange={(e) => setCoordenacaoId(e.target.value)}
+                      className="h-12 w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 text-sm text-slate-700 outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                    >
+                      <option value="">Todas as coordenações</option>
+                      {(coordenacoes ?? []).map((c) => (
+                        <option key={c.id} value={String(c.id)}>
+                          {c.nome}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
+
+              {/* Pessoas adicionadas à mão */}
               <div>
-                <Label htmlFor="node-coordenacao">Coordenação (opcional, para refinar)</Label>
-                {carregandoCoordenacoes ? (
-                  <div className="flex h-12 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4">
-                    <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
-                    <span className="text-sm text-slate-400">Carregando coordenações…</span>
-                  </div>
-                ) : (
-                  <select
-                    id="node-coordenacao"
-                    value={coordenacaoId}
-                    onChange={(e) => setCoordenacaoId(e.target.value)}
-                    className="h-12 w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 text-sm text-slate-700 outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                  >
-                    <option value="">Todas as coordenações</option>
-                    {(coordenacoes ?? []).map((c) => (
-                      <option key={c.id} value={String(c.id)}>
-                        {c.nome}
-                      </option>
-                    ))}
-                  </select>
+                <Label htmlFor="node-busca-pessoa">
+                  Pessoas adicionais {cargoId ? "(além do cargo acima)" : "*"}
+                </Label>
+                <div className="relative mb-2">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    id="node-busca-pessoa"
+                    value={buscaPessoa}
+                    onChange={(e) => setBuscaPessoa(e.target.value)}
+                    placeholder="Buscar pessoa…"
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-sm text-slate-700 outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+                {membroIdsManual.size > 0 && (
+                  <p className="mb-2 text-xs font-medium text-blue-600">
+                    {membroIdsManual.size} {membroIdsManual.size === 1 ? "pessoa marcada" : "pessoas marcadas"}
+                  </p>
                 )}
+                <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                  {carregandoMembros ? (
+                    <div className="flex h-12 items-center gap-2 px-4">
+                      <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+                      <span className="text-sm text-slate-400">Carregando pessoas…</span>
+                    </div>
+                  ) : membrosFiltrados.length === 0 ? (
+                    <p className="px-4 py-3 text-sm text-slate-400">Ninguém encontrado.</p>
+                  ) : (
+                    membrosFiltrados.map((m) => (
+                      <label
+                        key={m.id}
+                        className="flex cursor-pointer items-center gap-3 border-b border-slate-100 px-4 py-2.5 text-sm text-slate-700 last:border-b-0 hover:bg-slate-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={membroIdsManual.has(m.id)}
+                          onChange={() => alternarMembroManual(m.id)}
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-400"
+                        />
+                        {m.nome}
+                      </label>
+                    ))
+                  )}
+                </div>
               </div>
             </>
           )}
@@ -284,7 +359,11 @@ export function NodeFormModal({
             <Button
               type="submit"
               size="sm"
-              disabled={salvando || !titulo.trim() || (modo === "time" && !cargoId)}
+              disabled={
+                salvando ||
+                !titulo.trim() ||
+                (modo === "time" && !cargoId && membroIdsManual.size === 0)
+              }
             >
               {salvando ? (
                 <>

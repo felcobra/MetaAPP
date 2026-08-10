@@ -226,3 +226,23 @@ class OrgNo(Base):
         order_by="OrgNo.ordem",
     )
     pai = relationship("OrgNo", back_populates="filhos", foreign_keys=[parent_id], remote_side=[id])
+
+
+class OrgNoMembro(Base):
+    """Pessoas adicionadas manualmente a um nó de time. Complementa (não
+    substitui) a derivação automática por cargo/coordenação em OrgNo — existe
+    para times ad-hoc que não correspondem a nenhum cargo do RH (ex: "Equipe
+    de Conteúdo"), onde não tem como derivar a lista automaticamente."""
+    __tablename__ = "org_no_membro"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    org_no_id: Mapped[int] = mapped_column(
+        ForeignKey("org_no.id", ondelete="CASCADE"), nullable=False
+    )
+    membro_id: Mapped[int] = mapped_column(
+        ForeignKey("membro.id", ondelete="CASCADE"), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("org_no_id", "membro_id", name="uq_org_no_membro"),
+    )

@@ -182,17 +182,23 @@ class OrgNoCreate(BaseModel):
     # não cadastrada nó a nó. São mutuamente exclusivos com membro_id.
     cargo_id: int | None = None
     coordenacao_id: int | None = None
+    # Pessoas acrescentadas à mão ao time — para quando cargo/coordenação não
+    # bastam pra descrever quem está nele (times ad-hoc). Soma com o que vem
+    # de cargo_id, não substitui.
+    membro_ids_manual: list[int] = []
     titulo: str
     ordem: int = 0
 
 
 class OrgNoUpdate(BaseModel):
-    """Edição de um nó existente — só título, membro e cargo/coordenação
-    mudam; hierarquia e divisão não (para isso o admin remove e recria o nó)."""
+    """Edição de um nó existente — só título, membro, cargo/coordenação e a
+    lista manual mudam; hierarquia e divisão não (para isso o admin remove e
+    recria o nó)."""
     titulo: str
     membro_id: int | None = None
     cargo_id: int | None = None
     coordenacao_id: int | None = None
+    membro_ids_manual: list[int] = []
 
 
 class OrgDivisaoCreate(BaseModel):

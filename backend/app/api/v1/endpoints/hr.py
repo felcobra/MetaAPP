@@ -13,7 +13,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from datetime import date
@@ -23,7 +23,7 @@ from app.api.deps import get_current_user, require_admin, require_director_or_ad
 from app.models.hr import (
     Celula, Coordenacao, Cargo, Membro, MembroPerfilMetaapp,
     MembroCargo, MembroCelula, MembroCoordenacao, MembroProjeto,
-    OrgDivisao, OrgNo,
+    OrgDivisao, OrgNo, OrgNoMembro,
 )
 from app.schemas.hr import (
     CelulaCreate, CelulaRead,
@@ -389,15 +389,20 @@ def _build_tree(no: OrgNo, ctx: dict) -> dict:
     membro_data = None
     equipe_data = None
 
+    manual_ids = ctx["manual_membros"].get(no.id, set())
+
     if no.membro:
         membro_data = _membro_resumo(no.membro, ctx["perfis_by_membro"].get(no.membro.id))
-    elif no.cargo_id:
-        # Nó de time: a lista de pessoas não é cadastrada aqui — é derivada
-        # de quem já tem esse cargo (e essa coordenação, se informada) no RH.
-        # Some/troca gente no RH e o nó acompanha sozinho, sem retrabalho.
-        membro_ids = set(ctx["membros_por_cargo"].get(no.cargo_id, set()))
-        if no.coordenacao_id:
+    elif no.cargo_id or manual_ids:
+        # Nó de time: a lista de pessoas soma duas fontes —
+        # 1) quem já tem esse cargo (e essa coordenação, se informada) no RH,
+        #    derivado sozinho, sem retrabalho, e que acompanha o RH;
+        # 2) quem foi adicionado à mão (org_no_membro), para times ad-hoc que
+        #    não correspondem a nenhum cargo (ex: "Equipe de Conteúdo").
+        membro_ids = set(ctx["membros_por_cargo"].get(no.cargo_id, set())) if no.cargo_id else set()
+        if no.cargo_id and no.coordenacao_id:
             membro_ids &= ctx["membros_por_coordenacao"].get(no.coordenacao_id, set())
+        membro_ids |= manual_ids
 
         membros_time = []
         for membro_id in membro_ids:
@@ -412,10 +417,11 @@ def _build_tree(no: OrgNo, ctx: dict) -> dict:
 
         equipe_data = {
             "cargo_id": no.cargo_id,
-            "cargo_nome": ctx["cargos_by_id"].get(no.cargo_id),
+            "cargo_nome": ctx["cargos_by_id"].get(no.cargo_id) if no.cargo_id else None,
             "coordenacao_id": no.coordenacao_id,
             "coordenacao_nome": ctx["coordenacoes_by_id"].get(no.coordenacao_id) if no.coordenacao_id else None,
             "membros": membros_time,
+            "membro_ids_manual": sorted(manual_ids),
         }
 
     return {
@@ -491,6 +497,11 @@ async def get_orgchart(
     cargos_by_id = {c.id: c.nome for c in (await db.execute(select(Cargo))).scalars().all()}
     coordenacoes_by_id = {c.id: c.nome for c in (await db.execute(select(Coordenacao))).scalars().all()}
 
+    manual_membros: dict[int, set[int]] = {}
+    manual_r = await db.execute(select(OrgNoMembro.org_no_id, OrgNoMembro.membro_id))
+    for org_no_id, membro_id in manual_r.all():
+        manual_membros.setdefault(org_no_id, set()).add(membro_id)
+
     ctx = {
         "perfis_by_membro": perfis_by_membro,
         "membros_by_id": membros_by_id,
@@ -498,6 +509,7 @@ async def get_orgchart(
         "membros_por_coordenacao": membros_por_coordenacao,
         "cargos_by_id": cargos_by_id,
         "coordenacoes_by_id": coordenacoes_by_id,
+        "manual_membros": manual_membros,
     }
 
     result = []
@@ -533,6 +545,7 @@ async def create_no(
     _=Depends(require_admin),
 ):
     dados = body.model_dump()
+    membro_ids_manual = set(dados.pop("membro_ids_manual", []))
     # membro_id (1 pessoa) e cargo_id (time derivado do RH) são mutuamente
     # exclusivos — cargo_id manda se os dois vierem preenchidos.
     if dados.get("cargo_id"):
@@ -541,6 +554,9 @@ async def create_no(
         dados["coordenacao_id"] = None
     obj = OrgNo(**dados)
     db.add(obj)
+    await db.flush()
+    for membro_id in membro_ids_manual:
+        db.add(OrgNoMembro(org_no_id=obj.id, membro_id=membro_id))
     await db.flush()
     await db.refresh(obj)
     return {"id": obj.id, "titulo": obj.titulo, "divisao_id": obj.divisao_id}
@@ -572,6 +588,14 @@ async def update_no(
         obj.membro_id = body.membro_id
         obj.cargo_id = None
         obj.coordenacao_id = None
+
+    # Lista manual: substitui por completo (apaga e recria) em vez de
+    # comparar diferenças — mais simples e evita duplicar em caso de dois
+    # PATCHes concorrentes na mesma lista.
+    await db.execute(delete(OrgNoMembro).where(OrgNoMembro.org_no_id == no_id))
+    for membro_id in set(body.membro_ids_manual):
+        db.add(OrgNoMembro(org_no_id=no_id, membro_id=membro_id))
+
     await db.flush()
     await db.refresh(obj)
     return {

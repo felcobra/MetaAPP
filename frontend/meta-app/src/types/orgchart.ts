@@ -40,11 +40,14 @@ export interface MembroResumoApi {
 }
 
 export interface OrgEquipeApi {
-  cargo_id: number;
+  cargo_id: number | null;
   cargo_nome: string | null;
   coordenacao_id: number | null;
   coordenacao_nome: string | null;
   membros: MembroResumoApi[];
+  /** IDs adicionados à mão (não vêm do cargo) — usado para pré-marcar o
+   * multi-select ao editar, sem misturar com quem já entra por cargo. */
+  membro_ids_manual: number[];
 }
 
 export interface OrgNoApi {
