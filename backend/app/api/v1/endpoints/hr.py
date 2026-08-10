@@ -35,7 +35,7 @@ from app.schemas.hr import (
     MembroCelulaCreate, MembroCelulaRead,
     MembroCoordenacaoCreate, MembroCoordenacaoRead,
     MembroProjetoCreate, MembroProjetoRead,
-    OrgNoCreate, OrgDivisaoCreate, OrgDivisaoRead, OrgNoRead,
+    OrgNoCreate, OrgNoUpdate, OrgDivisaoCreate, OrgDivisaoRead, OrgNoRead,
 )
 
 logger = logging.getLogger("metaapp")
@@ -369,24 +369,61 @@ async def get_projetos_membro(membro_id: int, db: AsyncSession = Depends(get_db)
 
 # ========== OrgChart hierárquico (exclusivo do MetaApp) ==========
 
-def _build_tree(no: OrgNo, perfis_by_membro: dict) -> dict:
-    """Converte um OrgNo SQLAlchemy em dict recursivo para o schema OrgNoRead."""
+def _membro_resumo(m: Membro, perfil: MembroPerfilMetaapp | None) -> dict:
+    return {
+        "id": m.id,
+        "nome": m.nome,
+        "email": m.email,
+        "telefone": perfil.telefone if perfil else None,
+        "foto_url": perfil.foto_url if perfil else None,
+    }
+
+
+def _build_tree(no: OrgNo, ctx: dict) -> dict:
+    """Converte um OrgNo SQLAlchemy em dict recursivo para o frontend.
+
+    `ctx` traz lookups pré-calculados (perfis, membros por cargo/coordenação,
+    nomes de cargo/coordenação) montados uma vez em `get_orgchart` — evita
+    lazy-load fora do greenlet async e uma query por nó.
+    """
     membro_data = None
+    equipe_data = None
+
     if no.membro:
-        m = no.membro
-        perfil = perfis_by_membro.get(m.id)
-        membro_data = {
-            "id": m.id,
-            "nome": m.nome,
-            "email": m.email,
-            "telefone": perfil.telefone if perfil else None,
-            "foto_url": perfil.foto_url if perfil else None,
+        membro_data = _membro_resumo(no.membro, ctx["perfis_by_membro"].get(no.membro.id))
+    elif no.cargo_id:
+        # Nó de time: a lista de pessoas não é cadastrada aqui — é derivada
+        # de quem já tem esse cargo (e essa coordenação, se informada) no RH.
+        # Some/troca gente no RH e o nó acompanha sozinho, sem retrabalho.
+        membro_ids = set(ctx["membros_por_cargo"].get(no.cargo_id, set()))
+        if no.coordenacao_id:
+            membro_ids &= ctx["membros_por_coordenacao"].get(no.coordenacao_id, set())
+
+        membros_time = []
+        for membro_id in membro_ids:
+            m = ctx["membros_by_id"].get(membro_id)
+            if not m:
+                continue
+            perfil = ctx["perfis_by_membro"].get(membro_id)
+            if perfil is not None and not perfil.ativo:
+                continue
+            membros_time.append(_membro_resumo(m, perfil))
+        membros_time.sort(key=lambda item: item["nome"])
+
+        equipe_data = {
+            "cargo_id": no.cargo_id,
+            "cargo_nome": ctx["cargos_by_id"].get(no.cargo_id),
+            "coordenacao_id": no.coordenacao_id,
+            "coordenacao_nome": ctx["coordenacoes_by_id"].get(no.coordenacao_id) if no.coordenacao_id else None,
+            "membros": membros_time,
         }
+
     return {
         "id": no.id,
         "titulo": no.titulo,
         "membro": membro_data,
-        "filhos": [_build_tree(filho, perfis_by_membro) for filho in (no.filhos or [])],
+        "equipe": equipe_data,
+        "filhos": [_build_tree(filho, ctx) for filho in (no.filhos or [])],
     }
 
 
@@ -438,10 +475,35 @@ async def get_orgchart(
     perfis_r = await db.execute(select(MembroPerfilMetaapp))
     perfis_by_membro = {p.membro_id: p for p in perfis_r.scalars().all()}
 
+    membros_r = await db.execute(select(Membro))
+    membros_by_id = {m.id: m for m in membros_r.scalars().all()}
+
+    membros_por_cargo: dict[int, set[int]] = {}
+    mc_r = await db.execute(select(MembroCargo.membro_id, MembroCargo.cargo_id))
+    for membro_id, cargo_id in mc_r.all():
+        membros_por_cargo.setdefault(cargo_id, set()).add(membro_id)
+
+    membros_por_coordenacao: dict[int, set[int]] = {}
+    mco_r = await db.execute(select(MembroCoordenacao.membro_id, MembroCoordenacao.coordenacao_id))
+    for membro_id, coordenacao_id in mco_r.all():
+        membros_por_coordenacao.setdefault(coordenacao_id, set()).add(membro_id)
+
+    cargos_by_id = {c.id: c.nome for c in (await db.execute(select(Cargo))).scalars().all()}
+    coordenacoes_by_id = {c.id: c.nome for c in (await db.execute(select(Coordenacao))).scalars().all()}
+
+    ctx = {
+        "perfis_by_membro": perfis_by_membro,
+        "membros_by_id": membros_by_id,
+        "membros_por_cargo": membros_por_cargo,
+        "membros_por_coordenacao": membros_por_coordenacao,
+        "cargos_by_id": cargos_by_id,
+        "coordenacoes_by_id": coordenacoes_by_id,
+    }
+
     result = []
     for div in divisoes:
         nos_raiz = [n for n in div.nos if n.parent_id is None]
-        root_data = _build_tree(nos_raiz[0], perfis_by_membro) if nos_raiz else None
+        root_data = _build_tree(nos_raiz[0], ctx) if nos_raiz else None
         result.append({
             "id": div.slug,
             "divisao_num_id": div.id,   # ID numérico — usado pelo painel admin para POST /orgchart/nos
@@ -470,11 +532,55 @@ async def create_no(
     db: AsyncSession = Depends(get_db),
     _=Depends(require_admin),
 ):
-    obj = OrgNo(**body.model_dump())
+    dados = body.model_dump()
+    # membro_id (1 pessoa) e cargo_id (time derivado do RH) são mutuamente
+    # exclusivos — cargo_id manda se os dois vierem preenchidos.
+    if dados.get("cargo_id"):
+        dados["membro_id"] = None
+    else:
+        dados["coordenacao_id"] = None
+    obj = OrgNo(**dados)
     db.add(obj)
     await db.flush()
     await db.refresh(obj)
     return {"id": obj.id, "titulo": obj.titulo, "divisao_id": obj.divisao_id}
+
+
+@router.patch("/orgchart/nos/{no_id}", response_model=dict, summary="Editar título/membro de um nó existente")
+async def update_no(
+    no_id: int,
+    body: OrgNoUpdate,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """Corrige o título (cargo) ou o membro vinculado de um nó sem tocar na
+    hierarquia. Existe para consertar nós criados com o nome da pessoa no
+    campo de título em vez do cargo — sem isso, a única forma de corrigir
+    seria apagar o nó, o que arrasta os filhos junto (cascade)."""
+    r = await db.execute(select(OrgNo).where(OrgNo.id == no_id))
+    obj = r.scalar_one_or_none()
+    if not obj:
+        raise HTTPException(404, "Nó não encontrado")
+    obj.titulo = body.titulo
+    # membro_id (1 pessoa) e cargo_id (time derivado do RH) são mutuamente
+    # exclusivos — cargo_id manda se os dois vierem preenchidos.
+    if body.cargo_id:
+        obj.membro_id = None
+        obj.cargo_id = body.cargo_id
+        obj.coordenacao_id = body.coordenacao_id
+    else:
+        obj.membro_id = body.membro_id
+        obj.cargo_id = None
+        obj.coordenacao_id = None
+    await db.flush()
+    await db.refresh(obj)
+    return {
+        "id": obj.id,
+        "titulo": obj.titulo,
+        "membro_id": obj.membro_id,
+        "cargo_id": obj.cargo_id,
+        "coordenacao_id": obj.coordenacao_id,
+    }
 
 
 @router.delete("/orgchart/nos/{no_id}", status_code=204, summary="Remover nó (cascade nos filhos)")

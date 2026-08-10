@@ -200,6 +200,17 @@ class OrgNo(Base):
     membro_id: Mapped[int | None] = mapped_column(
         ForeignKey("membro.id", ondelete="SET NULL"), nullable=True
     )
+    # cargo_id/coordenacao_id: nó de "time" em vez de posição de 1 pessoa.
+    # Quando preenchido (em vez de membro_id), a lista de pessoas do nó não é
+    # cadastrada aqui — é derivada de quem já tem esse cargo (e essa
+    # coordenação, se informada) no RH. Evita recadastro manual e acompanha
+    # o RH automaticamente. membro_id e cargo_id são mutuamente exclusivos.
+    cargo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cargo.id", ondelete="SET NULL"), nullable=True
+    )
+    coordenacao_id: Mapped[int | None] = mapped_column(
+        ForeignKey("coordenacao.id", ondelete="SET NULL"), nullable=True
+    )
     titulo: Mapped[str] = mapped_column(String(200), nullable=False)
     ordem: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

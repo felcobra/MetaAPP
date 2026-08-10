@@ -31,16 +31,28 @@ export interface OrgDivision {
 
 // ── Resposta crua de GET /hr/orgchart ────────────────────────────────────────
 
+export interface MembroResumoApi {
+  id: number;
+  nome: string;
+  email: string;
+  telefone: string | null;
+  foto_url: string | null;
+}
+
+export interface OrgEquipeApi {
+  cargo_id: number;
+  cargo_nome: string | null;
+  coordenacao_id: number | null;
+  coordenacao_nome: string | null;
+  membros: MembroResumoApi[];
+}
+
 export interface OrgNoApi {
   id: number;
   titulo: string;
-  membro: {
-    id: number;
-    nome: string;
-    email: string;
-    telefone: string | null;
-    foto_url: string | null;
-  } | null;
+  membro: MembroResumoApi | null;
+  /** Nó de time (ex: "Consultores"): pessoas derivadas do cargo/coordenação no RH. */
+  equipe: OrgEquipeApi | null;
   filhos: OrgNoApi[];
 }
 
@@ -53,7 +65,7 @@ export interface OrgDivisaoApi {
   root: OrgNoApi | null;
 }
 
-function normalizarNo(no: OrgNoApi): OrgNode {
+function normalizarNo(no: OrgNoApi, divisaoLabel: string): OrgNode {
   return {
     id: String(no.id),
     title: no.titulo,
@@ -69,7 +81,23 @@ function normalizarNo(no: OrgNoApi): OrgNode {
           photoUrl: no.membro.foto_url ?? undefined,
         }
       : undefined,
-    children: no.filhos.length ? no.filhos.map(normalizarNo) : undefined,
+    // Nó de time: várias pessoas com o mesmo cargo (e coordenação, se o nó
+    // refina por ela) — a lista vem pronta do RH, sem cadastro manual aqui.
+    team: no.equipe
+      ? {
+          areaLabel: no.equipe.coordenacao_nome ?? divisaoLabel,
+          title: no.titulo,
+          members: no.equipe.membros.map((m) => ({
+            id: String(m.id),
+            name: m.nome,
+            role: no.equipe!.cargo_nome ?? no.titulo,
+            email: m.email,
+            phone: m.telefone ?? undefined,
+            photoUrl: m.foto_url ?? undefined,
+          })),
+        }
+      : undefined,
+    children: no.filhos.length ? no.filhos.map((filho) => normalizarNo(filho, divisaoLabel)) : undefined,
   };
 }
 
@@ -82,6 +110,6 @@ export function normalizarDivisoes(divisoes: OrgDivisaoApi[]): OrgDivision[] {
       id: d.id,
       divisaoNumId: d.divisao_num_id,
       label: d.label,
-      root: normalizarNo(d.root),
+      root: normalizarNo(d.root, d.label),
     }));
 }

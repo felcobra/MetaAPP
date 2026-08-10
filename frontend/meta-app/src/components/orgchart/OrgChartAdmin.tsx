@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   Plus,
   Trash2,
+  Pencil,
   ChevronRight,
   Loader2,
   FolderPlus,
@@ -34,6 +35,7 @@ function AdminNoRow({
   onRefresh: () => void;
 }) {
   const [showModal, setShowModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [removendo, setRemovendo] = useState(false);
 
   async function handleRemove() {
@@ -70,10 +72,25 @@ function AdminNoRow({
               — {no.membro.nome}
             </span>
           )}
+          {no.equipe && (
+            <span className="ml-1.5 text-xs font-normal text-slate-400">
+              — {no.equipe.cargo_nome}
+              {no.equipe.coordenacao_nome ? ` · ${no.equipe.coordenacao_nome}` : ""} (
+              {no.equipe.membros.length} {no.equipe.membros.length === 1 ? "pessoa" : "pessoas"})
+            </span>
+          )}
         </span>
 
         {/* Ações visíveis no hover */}
         <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            type="button"
+            title="Editar título/membro"
+            onClick={() => setShowEditModal(true)}
+            className="rounded-md p-1 text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
           <button
             type="button"
             title="Adicionar nó filho"
@@ -119,6 +136,25 @@ function AdminNoRow({
             onRefresh();
           }}
           onClose={() => setShowModal(false)}
+        />
+      )}
+
+      {showEditModal && (
+        <NodeFormModal
+          divisaoId={divisaoId}
+          parentId={no.id}
+          editNo={{
+            id: no.id,
+            titulo: no.titulo,
+            membroId: no.membro?.id ?? null,
+            cargoId: no.equipe?.cargo_id ?? null,
+            coordenacaoId: no.equipe?.coordenacao_id ?? null,
+          }}
+          onSuccess={() => {
+            setShowEditModal(false);
+            onRefresh();
+          }}
+          onClose={() => setShowEditModal(false)}
         />
       )}
     </>
