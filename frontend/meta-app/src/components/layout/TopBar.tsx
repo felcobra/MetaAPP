@@ -13,12 +13,21 @@ interface TopBarProps {
   onMenuClick: () => void;
 }
 
+// Rótulo amigável para quando a pessoa não tem cargo cadastrado no RH
+// (ex: admin criado pelo seed) — nunca mostra o "role" cru (permissão de
+// sistema, não cargo) direto na tela.
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Administrador(a)",
+  director: "Diretor(a)",
+  member: "Membro",
+};
+
 export function TopBar({ pageTitle, sidebarExpanded, onMenuClick }: TopBarProps) {
   const { user, logout } = useAuth();
 
   // Fallback enquanto o perfil carrega
   const displayName = user?.name ?? "…";
-  const displayRole = user?.role ?? "";
+  const displayRole = user?.cargo ?? (user ? ROLE_LABELS[user.role] ?? user.role : "");
   const displayInitials = user?.initials ?? "?";
 
   return (

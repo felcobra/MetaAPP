@@ -20,6 +20,7 @@ from datetime import date
 
 from app.core.database import get_db
 from app.api.deps import get_current_user, require_admin, require_director_or_admin
+from app.models.user import User
 from app.models.hr import (
     Celula, Coordenacao, Cargo, Membro, MembroPerfilMetaapp,
     MembroCargo, MembroCelula, MembroCoordenacao, MembroProjeto,
@@ -114,11 +115,26 @@ async def get_perfil_membro(membro_id: int, db: AsyncSession = Depends(get_db), 
 @router.patch("/membros/{membro_id}/perfil", response_model=MembroPerfilRead)
 async def update_perfil_membro(
     membro_id: int, body: MembroPerfilUpdate,
-    db: AsyncSession = Depends(get_db), _=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     r = await db.execute(select(Membro).where(Membro.id == membro_id))
     if not r.scalar_one_or_none():
         raise HTTPException(404, "Membro não encontrado")
+
+    # Só a própria pessoa (via membro vinculado à conta) ou admin/diretor
+    # editam um perfil — sem isso, qualquer usuário logado editaria o
+    # perfil de qualquer outro só trocando o membro_id na URL.
+    if current_user.role not in ("admin", "director"):
+        vinculo = await db.execute(
+            select(MembroPerfilMetaapp.id).where(
+                MembroPerfilMetaapp.membro_id == membro_id,
+                MembroPerfilMetaapp.user_id == current_user.id,
+            )
+        )
+        if vinculo.scalar_one_or_none() is None:
+            raise HTTPException(403, "Você só pode editar o seu próprio perfil.")
+
     perfil = await _get_or_create_perfil(db, membro_id)
     for k, v in body.model_dump(exclude_unset=True).items():
         setattr(perfil, k, v)

@@ -45,6 +45,17 @@ export function ProfileContent() {
     };
   }, []);
 
+  // Chamado só a partir de um clique (salvar no modal de edição), nunca de
+  // dentro de um efeito — por isso pode chamar setState direto, sem cair na
+  // regra que bane setState síncrono no corpo de um efeito.
+  function recarregarPerfil() {
+    apiFetch("/users/me/perfil")
+      .then((raw) => setPerfil(normalizarPerfil(raw as never)))
+      .catch((e: unknown) => {
+        setErro(e instanceof Error ? e.message : "Não foi possível recarregar o perfil.");
+      });
+  }
+
   if (erro) {
     return (
       <Card>
@@ -62,7 +73,7 @@ export function ProfileContent() {
         <ProfileHeaderCard perfil={perfil} stats={statsDoPerfil(perfil)} />
       </div>
       <div className="flex flex-col gap-6 lg:col-span-2">
-        <ProfileDetailsCard perfil={perfil} />
+        <ProfileDetailsCard perfil={perfil} onAtualizado={recarregarPerfil} />
         <SecurityCard />
       </div>
     </div>

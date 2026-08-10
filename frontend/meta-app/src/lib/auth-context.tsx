@@ -29,7 +29,12 @@ import {
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 export interface SessionUser {
   name: string;
+  /** Nível de permissão do sistema (admin/director/member) — usado só pra
+   * liberar telas, não é pra mostrar na UI. Ver `cargo` para exibição. */
   role: string;
+  /** Cargo real da pessoa no RH (ex: "Consultora de Projetos"). Null se não
+   * tiver membro vinculado (ex: admin sem cadastro no RH). */
+  cargo: string | null;
   email: string;
   initials: string;
 }

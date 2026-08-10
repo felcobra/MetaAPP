@@ -35,15 +35,33 @@ async def get_me(current_user: User = Depends(get_current_user)):
 
 
 @router.get("/me/profile", summary="Perfil do usuário logado (SessionUser para o frontend)")
-async def get_me_profile(current_user: User = Depends(get_current_user)):
+async def get_me_profile(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Retorna o perfil resumido usado pelo TopBar e Sidebar do frontend.
-    Inclui: nome, role, email e iniciais calculadas.
+    Inclui: nome, role (nível de permissão — admin/director/member, usado
+    para liberar telas), email, iniciais e o cargo real da pessoa no RH
+    (`cargo`), que é o que a UI mostra — "role" é permissão de sistema, não
+    é do que a pessoa deveria se orgulhar de ver escrito embaixo do nome.
     """
     name = current_user.full_name
     initials = "".join(p[0].upper() for p in name.split()[:2]) if name else "??"
+
+    cargo = (
+        await db.execute(
+            select(Cargo.nome)
+            .join(MembroCargo, MembroCargo.cargo_id == Cargo.id)
+            .join(MembroPerfilMetaapp, MembroPerfilMetaapp.membro_id == MembroCargo.membro_id)
+            .where(MembroPerfilMetaapp.user_id == current_user.id)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
     return {
         "name": name,
         "role": current_user.role,
+        "cargo": cargo,
         "email": current_user.email,
         "initials": initials,
     }

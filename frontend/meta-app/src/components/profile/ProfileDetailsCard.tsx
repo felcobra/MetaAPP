@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { ou, VAZIO, type MeuPerfil } from "@/types/profile";
+import { ProfileEditModal } from "./ProfileEditModal";
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -18,19 +20,29 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function ProfileDetailsCard({ perfil }: { perfil: MeuPerfil }) {
+export function ProfileDetailsCard({
+  perfil,
+  onAtualizado,
+}: {
+  perfil: MeuPerfil;
+  onAtualizado: () => void;
+}) {
   const sobre = perfil.sobre?.trim();
+  const [editando, setEditando] = useState(false);
 
   return (
     <Card>
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-base font-bold text-slate-900">Dados pessoais</h3>
-        <button
-          type="button"
-          className="shrink-0 text-xs font-medium text-slate-400 transition-colors hover:text-blue-600"
-        >
-          Editar todos os campos
-        </button>
+        {perfil.membroId && (
+          <button
+            type="button"
+            onClick={() => setEditando(true)}
+            className="shrink-0 text-xs font-medium text-slate-400 transition-colors hover:text-blue-600"
+          >
+            Editar todos os campos
+          </button>
+        )}
       </div>
 
       <div className="mt-4 divide-y divide-slate-100">
@@ -61,6 +73,17 @@ export function ProfileDetailsCard({ perfil }: { perfil: MeuPerfil }) {
           </p>
         </div>
       </div>
+
+      {editando && (
+        <ProfileEditModal
+          perfil={perfil}
+          onClose={() => setEditando(false)}
+          onSaved={() => {
+            setEditando(false);
+            onAtualizado();
+          }}
+        />
+      )}
     </Card>
   );
 }
