@@ -235,7 +235,7 @@ async def register(
         )
 
     user = User(
-        email=membro.email,
+        email=email,          # email já normalizado (lowercase) — consistente com o login
         full_name=membro.nome,
         hashed_password=get_password_hash(body.password),
         role="member",
@@ -272,7 +272,8 @@ async def login(
     - Limitado a 10 tentativas por minuto por IP (força bruta).
     - Sempre executa verify_password para evitar timing attacks (MED-03).
     """
-    result = await db.execute(select(User).where(User.email == form_data.username))
+    email = form_data.username.strip().lower()
+    result = await db.execute(select(User).where(func.lower(User.email) == email))
     user = result.scalar_one_or_none()
 
     # MED-03: mesmo se o usuário não existe, executa o bcrypt para equalizar
