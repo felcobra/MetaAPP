@@ -33,7 +33,13 @@ export function setTokens(access: string, refresh: string): void {
   // Cookie não-HttpOnly usado pelo middleware do Next.js para proteção de rotas.
   // Não armazena dados sensíveis — apenas sinaliza que a sessão existe.
   const maxAge = 7 * 24 * 60 * 60; // 7 dias (igual ao refresh token)
-  document.cookie = `${SESSION_COOKIE}=1; path=/; max-age=${maxAge}; SameSite=Strict`;
+  // Flag Secure adicionada automaticamente em produção (HTTPS).
+  // Em desenvolvimento local (HTTP), a flag Secure impediria o browser de
+  // enviar o cookie e quebraria o login.
+  const isSecure =
+    typeof window !== "undefined" && window.location.protocol === "https:";
+  const secureFlag = isSecure ? "; Secure" : "";
+  document.cookie = `${SESSION_COOKIE}=1; path=/; max-age=${maxAge}; SameSite=Strict${secureFlag}`;
 }
 
 export function clearTokens(): void {

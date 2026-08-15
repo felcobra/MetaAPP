@@ -31,7 +31,7 @@ from app.schemas.hr import (
     CoordenacaoCreate, CoordenacaoRead,
     CargoCreate, CargoRead,
     MembroRead, MembroCreate, MembroUpdate,
-    MembroPerfilRead, MembroPerfilUpdate,
+    MembroPerfilRead, MembroPerfilPublicRead, MembroPerfilUpdate,
     MembroCargoCreate, MembroCargoRead,
     MembroCelulaCreate, MembroCelulaRead,
     MembroCoordenacaoCreate, MembroCoordenacaoRead,
@@ -104,7 +104,7 @@ async def _get_or_create_perfil(db: AsyncSession, membro_id: int) -> MembroPerfi
     return perfil
 
 
-@router.get("/membros/{membro_id}/perfil", response_model=MembroPerfilRead)
+@router.get("/membros/{membro_id}/perfil", response_model=MembroPerfilPublicRead)
 async def get_perfil_membro(membro_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
     r = await db.execute(select(Membro).where(Membro.id == membro_id))
     if not r.scalar_one_or_none():
@@ -147,7 +147,7 @@ async def update_perfil_membro(
 
 @router.get("/membros", response_model=List[MembroRead])
 async def list_membros(
-    nome: Optional[str] = Query(None, description="Filtrar por nome (busca parcial)"),
+    nome: Optional[str] = Query(None, description="Filtrar por nome (busca parcial)", max_length=100),
     apenas_ativos: bool = Query(True, description="Se True, retorna apenas membros ativos"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=200),

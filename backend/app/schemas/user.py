@@ -1,13 +1,18 @@
 from datetime import datetime
 from typing import Literal
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 import re
 
 
 class UserBase(BaseModel):
     email: EmailStr
-    full_name: str
+    full_name: str = Field(..., min_length=1, max_length=200)
     role: Literal["admin", "director", "member"] = "member"
+
+    @field_validator("full_name")
+    @classmethod
+    def strip_full_name(cls, v: str) -> str:
+        return v.strip()
 
 
 class UserCreate(UserBase):
@@ -27,10 +32,15 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
-    full_name: str | None = None
+    full_name: str | None = Field(None, min_length=1, max_length=200)
     role: Literal["admin", "director", "member"] | None = None
     is_active: bool | None = None
     password: str | None = None
+
+    @field_validator("full_name")
+    @classmethod
+    def strip_full_name(cls, v: str | None) -> str | None:
+        return v.strip() if v else v
 
     @field_validator("password")
     @classmethod
