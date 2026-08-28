@@ -40,3 +40,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# videos (arquivos grandes — servir via YouTube ou CDN externo)
+*.mp4
+*.mov
+*.webm
+public/videos/
