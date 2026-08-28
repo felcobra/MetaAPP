@@ -88,21 +88,19 @@ async def create_categoria(body: CategoriaTransacaoCreate, db: AsyncSession = De
 # ========== Clientes ==========
 
 def _sanitize_cpf_cnpj(value: str | None) -> str | None:
-    """Remove formatação do CPF/CNPJ e valida comprimento."""
+    """Remove formatação do CPF/CNPJ (pontos/traços/barras).
+    A validação de comprimento (11 ou 14 dígitos) já é feita pelo Pydantic
+    no schema — este helper apenas normaliza o valor antes de salvar no banco.
+    """
     if not value:
         return None
     digits = re.sub(r"\D", "", value)
-    if len(digits) not in (11, 14):
-        raise HTTPException(
-            status_code=422,
-            detail="CPF/CNPJ inválido. Informe 11 dígitos (CPF) ou 14 dígitos (CNPJ).",
-        )
-    return digits
+    return digits if digits else None
 
 
 @router.get("/clientes", response_model=List[ClienteRead])
 async def list_clientes(
-    nome: Optional[str] = Query(None, description="Filtrar por nome do cliente"),
+    nome: Optional[str] = Query(None, description="Filtrar por nome do cliente", max_length=200),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -191,7 +189,7 @@ async def delete_cliente(
 async def get_painel_financeiro(
     periodo: Periodo = Depends(periodo_param),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    _=Depends(require_director_or_admin),
 ):
     """Tudo que os cards da tela Contratos & Financeiro precisam, numa
     chamada só — mesmo padrão de /comercial/resumo.
@@ -314,7 +312,7 @@ async def get_contratos_resumo(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    _=Depends(require_director_or_admin),
 ):
     """Como /contratos, mas com cliente, projeto e progresso de parcelas já
     resolvidos — /contratos só traz cliente_id/projeto_externo_id crus, e a
@@ -381,7 +379,7 @@ async def list_transacoes(
     page_size: int = Query(50, ge=1, le=200),
     periodo: Periodo = Depends(periodo_param),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    _=Depends(require_director_or_admin),
 ):
     """Extrato paginado — o modelo/schema de Transacao já existiam, mas não
     havia rota nenhuma expondo o lançamento financeiro (só os agregados).
@@ -446,7 +444,7 @@ async def list_contratos(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    _=Depends(require_director_or_admin),
 ):
     q = select(Contrato)
     if cliente_id:
@@ -458,7 +456,7 @@ async def list_contratos(
 
 
 @router.get("/contratos/{contrato_id}", response_model=ContratoRead)
-async def get_contrato(contrato_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def get_contrato(contrato_id: int, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     r = await db.execute(select(Contrato).where(Contrato.id == contrato_id))
     obj = r.scalar_one_or_none()
     if not obj:
@@ -517,7 +515,7 @@ async def delete_contrato(
 # ========== Pagamentos ==========
 
 @router.get("/contratos/{contrato_id}/pagamentos", response_model=List[ContratoPagamentoRead])
-async def list_pagamentos(contrato_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def list_pagamentos(contrato_id: int, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     r = await db.execute(
         select(ContratoPagamento).where(ContratoPagamento.contrato_id == contrato_id)
     )
@@ -550,7 +548,7 @@ async def update_pagamento(pag_id: int, body: ContratoPagamentoUpdate, db: Async
 
 
 @router.get("/resumo", response_model=FinanceiroPorStatus, summary="Resumo financeiro por status")
-async def get_resumo(db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+async def get_resumo(db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
     """Agrega o valor total de parcelas por status de pagamento."""
     rows = await db.execute(
         select(ContratoPagamento.status, func.sum(ContratoPagamento.valor))
@@ -569,7 +567,7 @@ async def get_resumo(db: AsyncSession = Depends(get_db), _=Depends(get_current_u
 @router.get("/fluxo-mensal", summary="Receita mensal — últimos 12 meses (MySQL DATE_FORMAT)")
 async def get_fluxo_mensal(
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    _=Depends(require_director_or_admin),
 ):
     """Retorna receita recebida (status=pago) mês a mês dos últimos 12 meses.
     Usa DATE_FORMAT do MySQL — compatível com o banco de dados da aplicação.

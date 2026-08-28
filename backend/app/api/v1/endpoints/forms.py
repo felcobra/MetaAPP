@@ -14,7 +14,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_director_or_admin
 from app.models.user import User
 from app.models.hr import Membro, MembroPerfilMetaapp
 from app.models.project_tracking import ProjetoExterno
@@ -96,7 +96,7 @@ async def get_template(
 async def create_template(
     body: FormTemplateCreate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_director_or_admin),
 ):
     obj = FormTemplate(**body.model_dump())
     db.add(obj)
@@ -111,7 +111,7 @@ async def add_step(
     template_id: int,
     body: FormStepCreate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_director_or_admin),
 ):
     r = await db.execute(select(FormTemplate).where(FormTemplate.id == template_id))
     if not r.scalar_one_or_none():
@@ -128,7 +128,7 @@ async def add_field(
     step_id: int,
     body: FormFieldCreate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_director_or_admin),
 ):
     r = await db.execute(select(FormStep).where(FormStep.id == step_id))
     if not r.scalar_one_or_none():
