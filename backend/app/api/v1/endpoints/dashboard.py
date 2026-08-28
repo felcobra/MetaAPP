@@ -20,6 +20,7 @@ from sqlalchemy import select, func, desc
 
 from app.core.database import get_db
 from app.api.deps import get_current_user
+from app.api.v1.periodo import Periodo, periodo_param
 from app.models.hr import (
     Cargo, Membro, Celula, Coordenacao, MembroProjeto, MembroCelula,
     MembroCoordenacao, MembroPerfilMetaapp,
@@ -142,13 +143,33 @@ async def get_dashboard(
 
 @router.get("/home", summary="Dados do widget Home (revenue, funil, projetos, aniversários)")
 async def get_home_data(
+    periodo: Periodo = Depends(periodo_param),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Endpoint dedicado à tela Home do frontend."""
+    """Endpoint dedicado à tela Home do frontend — e também alimenta um card
+    dos Dashboards, que é de onde o recorte de período pode chegar.
 
+    Aqui só o bloco de oportunidades (`em_negociacao_*`) aceita recorte. O
+    resto fica de fora, cada um por um motivo:
+
+    - `revenue.fat_atual`/`fat_total` dependem de `contrato_pagamento`, que
+      **não tem nenhuma data preenchida** — nem vencimento, nem pagamento, nas
+      30 linhas. Recortar zeraria o faturamento em vez de recortá-lo.
+    - `projects_overview` depende de `projeto_externo.data_inicio`, preenchida
+      em 3 das 22 linhas (todas em 2025).
+    - `sales_funnel` tem como base a tabela `leads`, que não tem coluna de data
+      nenhuma. Recortar só o topo (oportunidades) e deixar a base inteira
+      produziria percentual sobre bases diferentes — 20 qualificados sobre 2442
+      leads de todos os tempos.
+    - `birthdays` e `recognitions` não são grandezas de período.
+
+    O que fica de fora vai listado em `recorte.sem_recorte`, e a tela avisa.
+    """
     hoje = date.today()
     inicio_mes = hoje.replace(day=1)
+
+    filtro_op = periodo.condicoes(Oportunidade.criado_em)
 
     fat_atual = (await db.execute(
         select(func.sum(ContratoPagamento.valor))
@@ -164,14 +185,15 @@ async def get_home_data(
     )).scalar() or 0.0
 
     total_em_neg = (await db.execute(
-        select(func.count(Oportunidade.id)).where(Oportunidade.status_terminal == "ativo")
+        select(func.count(Oportunidade.id))
+        .where(Oportunidade.status_terminal == "ativo", *filtro_op)
     )).scalar() or 0
 
     # Só as oportunidades já precificadas entram na soma; valor_fechado é
     # nullable, então este número é um piso, não o pipeline inteiro.
     valor_em_neg = (await db.execute(
         select(func.sum(Oportunidade.valor_fechado))
-        .where(Oportunidade.status_terminal == "ativo")
+        .where(Oportunidade.status_terminal == "ativo", *filtro_op)
     )).scalar() or 0
 
     projetos_ativos = (await db.execute(
@@ -242,6 +264,16 @@ async def get_home_data(
     )).scalar() or 0
 
     return {
+        "recorte": {
+            "ativo": periodo.ativo,
+            # Ver docstring: cada um destes ignora o recorte por um motivo
+            # diferente, e a tela precisa poder dizer qual card não obedeceu.
+            "sem_recorte": (
+                ["revenue", "projects_overview", "sales_funnel", "birthdays", "recognitions"]
+                if periodo.ativo
+                else []
+            ),
+        },
         "revenue": {
             "fat_atual": float(fat_atual),
             "fat_total": float(fat_total),
@@ -263,10 +295,25 @@ async def get_home_data(
 
 @router.get("/kpis", summary="KPIs executivos (headcount, projetos, NPS, taxa de entrega)")
 async def get_kpis(
+    periodo: Periodo = Depends(periodo_param),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """KPIs calculados dinamicamente a partir das notas de acompanhamento de projetos."""
+    """KPIs calculados dinamicamente a partir das notas de acompanhamento de projetos.
+
+    Só taxa de entrega e NPS respondem ao recorte, e por dois motivos distintos:
+
+    - `headcount` é pergunta de instante ("quantas pessoas somos"), não de
+      intervalo — `membro` nem coluna de data tem.
+    - `projetos_ativos` fica de fora por falta de dado: `projeto_externo.
+      data_inicio` está preenchida em 3 das 22 linhas, todas em 2025. Recortar
+      devolveria 0 projetos ativos em qualquer período de 2026.
+
+    Os dois indicadores de acompanhamento se apoiam em
+    `acompanhamento_projeto.data_resposta`, que está preenchida nas 23 linhas.
+    """
+    filtro_acomp = periodo.condicoes(AcompanhamentoProjeto.data_resposta)
+
     headcount = (await db.execute(
         select(func.count(Membro.id))
         .outerjoin(MembroPerfilMetaapp, MembroPerfilMetaapp.membro_id == Membro.id)
@@ -281,20 +328,26 @@ async def get_kpis(
     # Taxa de entrega — média de eficacia_metodologia (escala 1-5 → 0-100%)
     media_qualidade = (await db.execute(
         select(func.avg(AcompanhamentoProjeto.eficacia_metodologia))
-        .where(AcompanhamentoProjeto.eficacia_metodologia.isnot(None))
+        .where(AcompanhamentoProjeto.eficacia_metodologia.isnot(None), *filtro_acomp)
     )).scalar()
     taxa_entrega = round((float(media_qualidade) / 5.0) * 100) if media_qualidade else None
 
     # NPS Interno — média de satisfacao_cliente convertida para escala NPS (-100 a 100)
     media_satisfacao = (await db.execute(
         select(func.avg(AcompanhamentoProjeto.satisfacao_cliente))
-        .where(AcompanhamentoProjeto.satisfacao_cliente.isnot(None))
+        .where(AcompanhamentoProjeto.satisfacao_cliente.isnot(None), *filtro_acomp)
     )).scalar()
     nps_interno = None
     if media_satisfacao:
         nps_interno = round(((float(media_satisfacao) - 1) / 4.0) * 200 - 100)
 
     return {
+        "recorte": {
+            "ativo": periodo.ativo,
+            "sem_recorte": (
+                ["headcount", "projetos_ativos"] if periodo.ativo else []
+            ),
+        },
         "headcount": headcount,
         "projetos_ativos": projetos_ativos,
         "taxa_entrega_pct": taxa_entrega,
@@ -304,16 +357,24 @@ async def get_kpis(
 
 @router.get("/deliveries-by-month", summary="Entregas por mês (últimos 12 meses)")
 async def get_deliveries_by_month(
+    periodo: Periodo = Depends(periodo_param),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Conta acompanhamentos por mês usando DATE_FORMAT (MySQL)."""
+    """Conta acompanhamentos por mês usando DATE_FORMAT (MySQL).
+
+    O `limit(12)` continua sendo um teto, não uma janela fixa: com recorte de um
+    semestre saem 6 barras, com "Tudo" saem os 12 últimos meses de sempre.
+    """
     rows = await db.execute(
         select(
             func.date_format(AcompanhamentoProjeto.data_resposta, "%Y-%m").label("mes"),
             func.count(AcompanhamentoProjeto.id).label("total"),
         )
-        .where(AcompanhamentoProjeto.data_resposta.isnot(None))
+        .where(
+            AcompanhamentoProjeto.data_resposta.isnot(None),
+            *periodo.condicoes(AcompanhamentoProjeto.data_resposta),
+        )
         .group_by("mes")
         # Ordena do mais recente para o mais antigo antes de cortar: com
         # order_by("mes") crescente, o LIMIT devolvia os 12 meses mais
@@ -326,12 +387,18 @@ async def get_deliveries_by_month(
 
 @router.get("/engagement-by-area", summary="Engajamento por área (satisfação média por coordenação)")
 async def get_engagement_by_area(
+    periodo: Periodo = Depends(periodo_param),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
     """Calcula a satisfação média de projetos segmentada por coordenação.
     Join: acompanhamento → projeto → membro_projeto → membro_coordenacao.
+
+    Recortado pela data do acompanhamento (quando a nota foi dada), não pela
+    data do projeto — a nota é o fato que se está medindo.
     """
+    filtro_acomp = periodo.condicoes(AcompanhamentoProjeto.data_resposta)
+
     r = await db.execute(select(Coordenacao).order_by(Coordenacao.id))
     coordenacoes = r.scalars().all()
 
@@ -345,6 +412,7 @@ async def get_engagement_by_area(
             .where(
                 MembroCoordenacao.coordenacao_id == coord.id,
                 AcompanhamentoProjeto.satisfacao_cliente.isnot(None),
+                *filtro_acomp,
             )
         )).scalar()
 
@@ -371,6 +439,9 @@ async def get_active_projects(
     são só 4 queries no total: os projetos, e uma consulta em lote para cada
     satélite (acompanhamentos, alocações, contratos), casadas em Python.
     """
+    # Sem recorte de período: `data_inicio` está preenchida em 3 das 22 linhas
+    # de projeto_externo (mesma limitação de /projetos/board e de
+    # projetos_ativos em /kpis).
     r = await db.execute(
         select(ProjetoExterno)
         .where(ProjetoExterno.status.notin_(_PROJETO_INATIVO))

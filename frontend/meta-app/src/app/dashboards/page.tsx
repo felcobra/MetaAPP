@@ -9,10 +9,11 @@ export const metadata: Metadata = {
 
 export default function DashboardsPage() {
   return (
-    <AppShell pageTitle="Dashboards">
+    <AppShell pageTitle="Dashboards" showPeriodFilter>
       {/* A descrição dizia "Atualizado há 4 minutos" e o filtro mostrava
-          "Junho · 2026", ambos fixos no código. Não há cache com timestamp
-          nem seletor de período implementado, então os dois saíram. */}
+          "Junho · 2026", ambos fixos no código, e por isso saíram. O timestamp
+          continua sem existir (não há cache com data); o seletor de período
+          voltou de verdade, na barra do topo — ver `PeriodFilter`. */}
       <PageHeader
         eyebrow="DASHBOARDS"
         title="Visão geral da Meta"

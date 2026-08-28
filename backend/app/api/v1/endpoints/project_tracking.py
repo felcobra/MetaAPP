@@ -59,6 +59,15 @@ async def get_board(
 ):
     """Alimenta o quadro de Projetos Externos.
 
+    Sem recorte de período: `projeto_externo.data_inicio` está preenchida em
+    apenas 3 das 22 linhas, e as três em 2025. Qualquer recorte de 2026 devolve
+    o quadro vazio — não é filtro, é apagar a tela. Por isso a tela de Projetos
+    externos também não mostra os chips de período (ver `AppShell`).
+
+    Quando a coluna estiver preenchida, dá para recortar com
+    `*periodo.condicoes(ProjetoExterno.data_inicio)` na consulta abaixo e
+    religar `showPeriodFilter` na página.
+
     Difere de /dashboard/active-projects por trazer também os finalizados (o
     quadro tem filtro próprio) e a área responsável.
 

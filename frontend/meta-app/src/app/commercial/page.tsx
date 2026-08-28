@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function CommercialPage() {
   return (
-    <AppShell pageTitle="Comercial">
+    <AppShell pageTitle="Comercial" showPeriodFilter>
       {/* @container: a barra lateral muda a largura DESTE bloco, nao a da janela.
           Todo o escalonamento da pagina responde a esta largura, de modo que a
           distribuicao em duas colunas se mantem com o menu aberto. */}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Card } from "@/components/ui/Card";
-import { ou, VAZIO, type MeuPerfil } from "@/types/profile";
+import { dataBR, ou, VAZIO, type MeuPerfil } from "@/types/profile";
 import { ProfileEditModal } from "./ProfileEditModal";
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -52,11 +52,7 @@ export function ProfileDetailsCard({
         </div>
         <div className="grid grid-cols-1 gap-4 py-4 sm:grid-cols-2">
           <Field label="TELEFONE" value={ou(perfil.telefone)} />
-          <Field label="CÉLULA" value={ou(perfil.celula)} />
-        </div>
-        <div className="grid grid-cols-1 gap-4 py-4 sm:grid-cols-2">
-          <Field label="CARGO" value={ou(perfil.cargo)} />
-          <Field label="COORDENAÇÃO" value={ou(perfil.coordenacao)} />
+          <Field label="DATA DE ANIVERSÁRIO" value={dataBR(perfil.dataNascimento)} />
         </div>
         <div className="pt-4">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">

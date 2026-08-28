@@ -19,6 +19,7 @@ from sqlalchemy import select, func, desc, case
 
 from app.core.database import get_db
 from app.api.deps import get_current_user, require_admin, require_director_or_admin
+from app.api.v1.periodo import Periodo, periodo_param
 from app.models.financial import (
     FormaPagamento, ContaBancaria, CategoriaTransacao,
     Cliente, Contrato, ContratoPagamento, Transacao,
@@ -188,11 +189,29 @@ async def delete_cliente(
 
 @router.get("/painel", summary="Agregados da tela Contratos & Financeiro (resumo, fluxo mensal, saídas por categoria)")
 async def get_painel_financeiro(
+    periodo: Periodo = Depends(periodo_param),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
     """Tudo que os cards da tela Contratos & Financeiro precisam, numa
-    chamada só — mesmo padrão de /comercial/resumo."""
+    chamada só — mesmo padrão de /comercial/resumo.
+
+    **Só as transações são recortadas.** Não é escolha de produto, é o estado
+    da base: `contrato.data_inicio` está NULL nas 20 linhas da tabela, e
+    `contrato_pagamento` não tem *nenhuma* data preenchida (nem vencimento nem
+    pagamento, nas 30 linhas). Recortar por essas colunas não filtraria nada —
+    zeraria os cards, porque comparação com NULL descarta a linha. Uma tela
+    dizendo "R$ 0 contratados" seria pior do que uma dizendo o total de sempre.
+
+    `transacao.data`, ao contrário, está preenchida nas 762 linhas (2024→2026),
+    e é o que sustenta entradas, saídas, resultado, fluxo mensal e categorias.
+
+    Quando `contrato`/`contrato_pagamento` ganharem datas, é só trocar o
+    `.where(...)` destes dois blocos por `*periodo.condicoes(<coluna>)` e
+    ajustar `recorte.sem_recorte` — o resto já está pronto.
+    """
+    filtro_transacao = periodo.condicoes(Transacao.data)
+
     receita_row = (await db.execute(
         select(func.sum(Contrato.valor_total), func.count(Contrato.id))
     )).first()
@@ -200,11 +219,14 @@ async def get_painel_financeiro(
     total_contratos = receita_row[1] or 0
 
     a_receber = (await db.execute(
-        select(func.sum(ContratoPagamento.valor)).where(ContratoPagamento.status == "pendente")
+        select(func.sum(ContratoPagamento.valor))
+        .where(ContratoPagamento.status == "pendente")
     )).scalar() or 0
 
     fluxo_rows = (await db.execute(
-        select(Transacao.tipo, func.sum(Transacao.valor)).group_by(Transacao.tipo)
+        select(Transacao.tipo, func.sum(Transacao.valor))
+        .where(*filtro_transacao)
+        .group_by(Transacao.tipo)
     )).all()
     por_tipo = {tipo: float(valor or 0) for tipo, valor in fluxo_rows}
     entradas = por_tipo.get("entrada", 0)
@@ -217,7 +239,7 @@ async def get_painel_financeiro(
             Transacao.tipo,
             func.sum(Transacao.valor),
         )
-        .where(Transacao.data.isnot(None))
+        .where(Transacao.data.isnot(None), *filtro_transacao)
         .group_by("mes", Transacao.tipo)
         .order_by(desc("mes"))
     )).all()
@@ -234,7 +256,7 @@ async def get_painel_financeiro(
     categoria_rows = (await db.execute(
         select(CategoriaTransacao.nome, func.sum(Transacao.valor))
         .join(Transacao, Transacao.categoria_id == CategoriaTransacao.id)
-        .where(Transacao.tipo == "saida")
+        .where(Transacao.tipo == "saida", *filtro_transacao)
         .group_by(CategoriaTransacao.nome)
         .order_by(desc(func.sum(Transacao.valor)))
         .limit(8)
@@ -244,19 +266,35 @@ async def get_painel_financeiro(
         for nome, valor in categoria_rows
     ]
 
-    # Saldo por conta (entradas − saídas), só contas com movimentação
+    # Saldo por conta (entradas − saídas), só contas com movimentação.
+    #
+    # Com recorte ativo isto deixa de ser "saldo" e passa a ser a movimentação
+    # líquida do período — saldo é um valor de um instante, não de um intervalo.
+    # Hoje nenhuma tela consome esta chave; quem for exibi-la precisa ler
+    # `recorte.ativo` na resposta e trocar o título, senão vai chamar de saldo
+    # um número que não é.
     conta_rows = (await db.execute(
         select(
             ContaBancaria.nome,
             func.sum(case((Transacao.tipo == "entrada", Transacao.valor), else_=-Transacao.valor)),
         )
         .join(Transacao, Transacao.conta_id == ContaBancaria.id)
+        .where(*filtro_transacao)
         .group_by(ContaBancaria.nome)
         .order_by(desc(func.sum(case((Transacao.tipo == "entrada", Transacao.valor), else_=-Transacao.valor))))
     )).all()
     saldo_por_conta = [{"label": nome, "value": float(valor or 0)} for nome, valor in conta_rows]
 
     return {
+        "recorte": {
+            "ativo": periodo.ativo,
+            # Ver docstring: falta de dado na coluna, não escolha de produto.
+            "sem_recorte": (
+                ["receita_contratada", "total_contratos", "a_receber"]
+                if periodo.ativo
+                else []
+            ),
+        },
         "resumo": {
             "receita_contratada": receita_contratada,
             "total_contratos": total_contratos,
@@ -280,7 +318,12 @@ async def get_contratos_resumo(
 ):
     """Como /contratos, mas com cliente, projeto e progresso de parcelas já
     resolvidos — /contratos só traz cliente_id/projeto_externo_id crus, e a
-    tabela da tela mostra texto e progresso (x/y parcelas)."""
+    tabela da tela mostra texto e progresso (x/y parcelas).
+
+    Sem recorte de período, pelo mesmo motivo dos cards de contrato em /painel:
+    `contrato.data_inicio` está NULL nas 20 linhas da tabela, então qualquer
+    recorte esvaziaria a tabela inteira em vez de filtrá-la.
+    """
     total = (await db.execute(select(func.count(Contrato.id)))).scalar() or 0
 
     contratos = (await db.execute(
@@ -336,16 +379,24 @@ async def list_transacoes(
     tipo: Optional[str] = Query(None, description="Filtrar por tipo: entrada ou saida"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    periodo: Periodo = Depends(periodo_param),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
     """Extrato paginado — o modelo/schema de Transacao já existiam, mas não
-    havia rota nenhuma expondo o lançamento financeiro (só os agregados)."""
-    query = select(Transacao)
-    if tipo:
-        query = query.where(Transacao.tipo == tipo)
+    havia rota nenhuma expondo o lançamento financeiro (só os agregados).
 
-    total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar() or 0
+    Os filtros saem numa lista só, aplicada à contagem E à página. Antes o
+    `tipo` entrava apenas na contagem: pedir `tipo=saida` devolvia o total certo
+    de saídas com uma página que continuava trazendo entradas junto.
+    """
+    filtros = list(periodo.condicoes(Transacao.data))
+    if tipo:
+        filtros.append(Transacao.tipo == tipo)
+
+    total = (await db.execute(
+        select(func.count(Transacao.id)).where(*filtros)
+    )).scalar() or 0
     total_pages = max(1, -(-total // page_size))
     skip = (page - 1) * page_size
 
@@ -357,6 +408,7 @@ async def list_transacoes(
         .outerjoin(CategoriaTransacao, CategoriaTransacao.id == Transacao.categoria_id)
         .outerjoin(ContaBancaria, ContaBancaria.id == Transacao.conta_id)
         .outerjoin(ProjetoExterno, ProjetoExterno.id == Transacao.projeto_externo_id)
+        .where(*filtros)
         .order_by(desc(Transacao.data), desc(Transacao.id))
         .offset(skip)
         .limit(page_size)

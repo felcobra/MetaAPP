@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { Wallet, FileText, ArrowDownCircle, ArrowUpCircle, Scale } from "lucide-react";
 import { useApi, useApiVarios } from "@/lib/use-api";
+import { usePeriod } from "@/lib/period-context";
 import { StatCard } from "@/components/ui/StatCard";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Tabs } from "@/components/ui/Tabs";
 import { ErroCard, Skeleton, VazioCard } from "@/components/ui/AsyncState";
+import { PeriodoLido } from "@/components/shared/PeriodoLido";
 import { brl } from "@/lib/format";
 import {
   mesCurto,
@@ -26,15 +28,24 @@ function dataBR(iso: string | null): string {
 export function FinancialContent() {
   const [pagina, setPagina] = useState(1);
   const [tipoTransacao, setTipoTransacao] = useState("todas");
+  const { periodo, descricao, ativo, comPeriodo } = usePeriod();
+
+  // Mesmo motivo do Comercial: o recorte encolhe o extrato, e a página em que
+  // a pessoa estava pode não existir mais dentro dele.
+  const [periodoAnterior, setPeriodoAnterior] = useState(periodo);
+  if (periodo !== periodoAnterior) {
+    setPeriodoAnterior(periodo);
+    setPagina(1);
+  }
 
   const painelState = useApiVarios<[PainelFinanceiroApi, ContratosResumoApi]>([
-    "/financeiro/painel",
-    "/financeiro/contratos-resumo?limit=50",
+    comPeriodo("/financeiro/painel"),
+    comPeriodo("/financeiro/contratos-resumo?limit=50"),
   ]);
 
   const filtroTipo = tipoTransacao === "todas" ? "" : `&tipo=${tipoTransacao}`;
   const transacoesState = useApi<TransacoesApi>(
-    `/financeiro/transacoes?page=${pagina}&page_size=${PAGE_SIZE}${filtroTipo}`,
+    comPeriodo(`/financeiro/transacoes?page=${pagina}&page_size=${PAGE_SIZE}${filtroTipo}`),
   );
 
   if (painelState.erro) {
@@ -57,6 +68,14 @@ export function FinancialContent() {
 
   return (
     <>
+      {/* Só o que vem de `transacao` recorta — contrato e contrato_pagamento
+          estão sem datas na base. Ver a docstring de /financeiro/painel. */}
+      <PeriodoLido
+        descricao={descricao}
+        ativo={ativo}
+        aviso="Entradas, saídas, resultado, fluxo e extrato seguem o período. Receita contratada e a receber não: contratos e parcelas estão sem datas na base."
+      />
+
       <div className="mb-8 grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
         <StatCard
           label="Receita contratada"

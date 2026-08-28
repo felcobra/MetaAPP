@@ -79,6 +79,22 @@ export function ou(valor: string | null | undefined): string {
   return valor?.trim() ? valor : VAZIO;
 }
 
+/**
+ * Formata uma data ISO (AAAA-MM-DD) como dd/mm/aaaa.
+ *
+ * Feito na mão, sem passar por `new Date()`: uma string de data pura é lida
+ * como meia-noite UTC, e no Brasil (UTC-3) o `toLocaleDateString` devolve o dia
+ * anterior — um aniversário no dia 1º apareceria como dia 31 do mês passado.
+ */
+export function dataBR(iso: string | null | undefined): string {
+  if (!iso) return VAZIO;
+
+  const [ano, mes, dia] = iso.slice(0, 10).split("-");
+  if (!ano || !mes || !dia) return VAZIO;
+
+  return `${dia}/${mes}/${ano}`;
+}
+
 export function statsDoPerfil(perfil: MeuPerfil): ProfileStat[] {
   return [
     { label: "PAPEs respondidos", value: String(perfil.stats.papesRespondidos) },

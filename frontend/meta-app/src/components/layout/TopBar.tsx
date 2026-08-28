@@ -6,11 +6,15 @@ import { Menu, PanelLeftClose, Search, LogOut } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import LogoMark from "../../../public/logo.png";
 import { useAuth } from "@/lib/auth-context";
+import { PeriodFilter } from "./PeriodFilter";
+import { cn } from "@/lib/cn";
 
 interface TopBarProps {
   pageTitle: string;
   sidebarExpanded: boolean;
   onMenuClick: () => void;
+  /** Mostra os chips de período. Só nas telas que recortam por data. */
+  showPeriodFilter?: boolean;
 }
 
 // Rótulo amigável para quando a pessoa não tem cargo cadastrado no RH
@@ -22,7 +26,12 @@ const ROLE_LABELS: Record<string, string> = {
   member: "Membro",
 };
 
-export function TopBar({ pageTitle, sidebarExpanded, onMenuClick }: TopBarProps) {
+export function TopBar({
+  pageTitle,
+  sidebarExpanded,
+  onMenuClick,
+  showPeriodFilter = false,
+}: TopBarProps) {
   const { user, logout } = useAuth();
 
   // Fallback enquanto o perfil carrega
@@ -49,7 +58,14 @@ export function TopBar({ pageTitle, sidebarExpanded, onMenuClick }: TopBarProps)
         <span className="min-w-0 truncate text-sm font-medium text-slate-500 sm:text-base">{pageTitle}</span>
       </div>
 
-      <div className="hidden max-w-md flex-1 md:flex">
+      {/* Com os chips de período na barra, a busca só reaparece em telas
+          largas — as duas juntas espremiam o título da página até sumir. */}
+      <div
+        className={cn(
+          "hidden max-w-md flex-1",
+          showPeriodFilter ? "2xl:flex" : "md:flex",
+        )}
+      >
         <div className="relative w-full min-w-0">
           <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
@@ -59,6 +75,8 @@ export function TopBar({ pageTitle, sidebarExpanded, onMenuClick }: TopBarProps)
           />
         </div>
       </div>
+
+      {showPeriodFilter ? <PeriodFilter className="ml-auto" /> : null}
 
       <div className="flex shrink-0 items-center gap-3">
         <button type="button" className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 text-blue-600 transition-colors hover:bg-slate-50" aria-label="Notificacoes">

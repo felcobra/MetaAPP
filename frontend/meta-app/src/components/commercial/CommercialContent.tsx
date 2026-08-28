@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Circle } from "lucide-react";
-import { useApi, useApiVarios } from "@/lib/use-api";
+import { useApi } from "@/lib/use-api";
+import { usePeriod } from "@/lib/period-context";
+import { PeriodoLido } from "@/components/shared/PeriodoLido";
 import { CommercialFunnelCard } from "@/components/commercial/CommercialFunnelCard";
 import { OutcomeStatsCard } from "@/components/commercial/OutcomeStatsCard";
 import { OriginBarList } from "@/components/commercial/OriginBarList";
@@ -31,10 +32,22 @@ function dataBR(iso: string | null): string {
 
 export function CommercialContent() {
   const [pagina, setPagina] = useState(1);
+  const { periodo, descricao, ativo, comPeriodo } = usePeriod();
 
-  const resumoState = useApiVarios<[ResumoComercialApi]>(["/comercial/resumo"]);
+  // Trocar o período encolhe a tabela: quem estava na página 30 do histórico
+  // inteiro pediria a página 30 de um recorte que tem 3, e a tabela voltaria
+  // vazia. Reset durante o render, o mesmo padrão que `use-api.ts` usa.
+  const [periodoAnterior, setPeriodoAnterior] = useState(periodo);
+  if (periodo !== periodoAnterior) {
+    setPeriodoAnterior(periodo);
+    setPagina(1);
+  }
+
+  // `comPeriodo` entra na string da rota, e o `useApi` refaz a chamada quando
+  // ela muda — trocar o chip no topo já rebusca os dados, sem efeito extra.
+  const resumoState = useApi<ResumoComercialApi>(comPeriodo("/comercial/resumo"));
   const tabelaState = useApi<TabelaOportunidadesApi>(
-    `/comercial/tabela-oportunidades?page=${pagina}&page_size=${PAGE_SIZE}`,
+    comPeriodo(`/comercial/tabela-oportunidades?page=${pagina}&page_size=${PAGE_SIZE}`),
   );
 
   if (resumoState.erro) {
@@ -51,7 +64,7 @@ export function CommercialContent() {
     );
   }
 
-  const [resumo] = resumoState.data;
+  const resumo = resumoState.data;
 
   const desfechos: OutcomeStat[] = [
     {
@@ -78,10 +91,8 @@ export function CommercialContent() {
     colorClassName: corDoMotivo(i),
   }));
 
-  const periodo: PeriodSummary = {
-    // O filtro de período ainda não existe; o rótulo diz o que os números são
-    // de fato, em vez de anunciar um recorte que não está sendo aplicado.
-    periodLabel: "Todo o histórico",
+  const resumoPeriodo: PeriodSummary = {
+    periodLabel: descricao,
     pipelineOpen: resumo.resumo.pipeline_aberto,
     conversionRate: `${resumo.resumo.taxa_conversao_pct}%`,
     clients: resumo.resumo.clientes,
@@ -101,19 +112,21 @@ export function CommercialContent() {
 
   return (
     <>
-      <div className="mb-5 flex min-w-0 flex-wrap items-center gap-2.5 text-xs @3xl:text-[13px] @5xl:mb-6 @5xl:gap-3 @5xl:text-sm">
-        <span className="inline-flex max-w-full items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 font-semibold text-blue-700 @5xl:px-3.5">
-          <Circle className="h-2 w-2 shrink-0 fill-blue-600 text-blue-600" />
-          <span className="min-w-0 break-words">Lendo: {periodo.periodLabel}</span>
-        </span>
-      </div>
+      {/* `cliente` não tem coluna de data, então o total de clientes é sempre
+          da base inteira. Dizer isso é mais barato do que a pessoa descobrir
+          sozinha que um número do card não obedeceu ao filtro. */}
+      <PeriodoLido
+        descricao={resumoPeriodo.periodLabel}
+        ativo={ativo}
+        aviso="Clientes seguem contando a base inteira — não há data de cadastro para recortar."
+      />
 
       <div className="mb-5 grid min-w-0 grid-cols-1 gap-4 @3xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] @3xl:gap-5 @5xl:grid-cols-[minmax(0,1.55fr)_minmax(0,0.95fr)] @6xl:mb-6 @6xl:gap-6">
         <div className="min-w-0">
           <CommercialFunnelCard
             stages={resumo.funil}
-            openCount={periodo.pipelineOpen}
-            conversionRate={periodo.conversionRate}
+            openCount={resumoPeriodo.pipelineOpen}
+            conversionRate={resumoPeriodo.conversionRate}
           />
         </div>
         <div className="flex min-w-0 flex-col gap-4 @3xl:gap-5 @6xl:gap-6">
@@ -127,7 +140,7 @@ export function CommercialContent() {
           <LossReasonsCard reasons={motivos} />
         </div>
         <div className="min-w-0">
-          <PeriodSummaryCard summary={periodo} className="h-full" />
+          <PeriodSummaryCard summary={resumoPeriodo} className="h-full" />
         </div>
       </div>
 

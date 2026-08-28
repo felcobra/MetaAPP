@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Montserrat } from "next/font/google";
 import { AuthProvider } from "@/lib/auth-context";
+import { PeriodProvider } from "@/lib/period-context";
 import "./globals.css";
 
 const montserrat = Montserrat({
@@ -29,7 +30,11 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-surface text-slate-900">
         <AuthProvider>
-          {children}
+          {/* No layout raiz, e não no AppShell: assim o período escolhido
+              sobrevive à navegação entre as telas analíticas. */}
+          <PeriodProvider>
+            {children}
+          </PeriodProvider>
         </AuthProvider>
       </body>
     </html>

@@ -1,7 +1,9 @@
 "use client";
 
 import { useApiVarios } from "@/lib/use-api";
+import { usePeriod } from "@/lib/period-context";
 import { DashboardTabs } from "@/components/dashboard/DashboardTabs";
+import { PeriodoLido } from "@/components/shared/PeriodoLido";
 import { ErroCard, Skeleton } from "@/components/ui/AsyncState";
 import {
   rotuloMes,
@@ -44,14 +46,16 @@ function montarKpis(k: KpisApi): KpiCard[] {
 }
 
 export function DashboardsContent() {
+  const { descricao, ativo, comPeriodo } = usePeriod();
+
   const { data, erro, carregando } = useApiVarios<
     [KpisApi, DeliveryApi[], EngagementItem[], ActiveProjectRow[], HomeData]
   >([
-    "/dashboard/kpis",
-    "/dashboard/deliveries-by-month",
-    "/dashboard/engagement-by-area",
-    "/dashboard/active-projects",
-    "/dashboard/home",
+    comPeriodo("/dashboard/kpis"),
+    comPeriodo("/dashboard/deliveries-by-month"),
+    comPeriodo("/dashboard/engagement-by-area"),
+    comPeriodo("/dashboard/active-projects"),
+    comPeriodo("/dashboard/home"),
   ]);
 
   if (erro) return <ErroCard erro={erro} titulo="Não foi possível carregar os dashboards" />;
@@ -78,12 +82,24 @@ export function DashboardsContent() {
   const funil: ProposalFunnelStage[] = home.sales_funnel;
 
   return (
-    <DashboardTabs
-      kpiCards={montarKpis(kpis)}
-      deliveries={deliveries}
-      engagement={engajamento}
-      proposalFunnel={funil}
-      activeProjects={projetos}
-    />
+    <>
+      {/* Nesta tela o recorte alcança só o que se apoia em
+          `acompanhamento_projeto.data_resposta` (entregas por mês, engajamento
+          por área, taxa de entrega e NPS). Headcount é pergunta de instante; o
+          resto fica de fora por falta de data na base — ver as docstrings de
+          /dashboard/kpis e /dashboard/home. */}
+      <PeriodoLido
+        descricao={descricao}
+        ativo={ativo}
+        aviso="Entregas, engajamento, taxa de entrega e NPS seguem o período. Headcount, projetos e funil de propostas não — leads, projetos e pagamentos estão sem datas na base."
+      />
+      <DashboardTabs
+        kpiCards={montarKpis(kpis)}
+        deliveries={deliveries}
+        engagement={engajamento}
+        proposalFunnel={funil}
+        activeProjects={projetos}
+      />
+    </>
   );
 }

@@ -8,9 +8,20 @@ interface AppShellProps {
   pageTitle: string;
   children: ReactNode;
   showSidebar?: boolean;
+  /**
+   * Liga os chips de período na barra do topo. Opt-in por página: só as telas
+   * cujas rotas de API aceitam `data_inicio`/`data_fim` devem passar isto.
+   * Ver `PeriodFilter` para o porquê de não ser padrão em toda tela.
+   */
+  showPeriodFilter?: boolean;
 }
 
-export function AppShell({ pageTitle, children, showSidebar = true }: AppShellProps) {
+export function AppShell({
+  pageTitle,
+  children,
+  showSidebar = true,
+  showPeriodFilter = false,
+}: AppShellProps) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
 
@@ -39,6 +50,7 @@ export function AppShell({ pageTitle, children, showSidebar = true }: AppShellPr
           pageTitle={pageTitle}
           sidebarExpanded={showSidebar ? desktopSidebarOpen : false}
           onMenuClick={handleMenuClick}
+          showPeriodFilter={showPeriodFilter}
         />
         <main className="min-w-0 flex-1 bg-surface px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
           {children}

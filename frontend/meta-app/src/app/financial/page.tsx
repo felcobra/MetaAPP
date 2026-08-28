@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function FinancialPage() {
   return (
-    <AppShell pageTitle="Contratos & Financeiro">
+    <AppShell pageTitle="Contratos & Financeiro" showPeriodFilter>
       <PageHeader
         eyebrow="COMERCIAL & FINANCEIRO"
         title="Contratos, Receita & Financeiro"

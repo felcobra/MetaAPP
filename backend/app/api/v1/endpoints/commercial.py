@@ -15,6 +15,7 @@ from sqlalchemy import select, func, desc
 
 from app.core.database import get_db
 from app.api.deps import get_current_user, require_admin, require_director_or_admin
+from app.api.v1.periodo import Periodo, periodo_param
 from app.models.commercial import (
     DimLeadOrigem, DimMotivoPerdida, Lead, Oportunidade, OportunidadePhaseHistory
 )
@@ -160,16 +161,24 @@ async def delete_lead(
 
 @router.get("/resumo", summary="Agregados da tela Comercial (funil, origens, motivos, resumo)")
 async def get_resumo_comercial(
+    periodo: Periodo = Depends(periodo_param),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
     """Tudo que os cards da tela Comercial precisam, numa chamada só.
 
-    Sem recorte de período: o filtro da tela ainda não existe, e `criado_em` é
-    nullable numa parte relevante das oportunidades importadas do Pipefy, então
-    filtrar por data esconderia registros em vez de recortá-los. Os números
-    são, portanto, do histórico inteiro.
+    O recorte de período incide sobre `oportunidade.criado_em` — a data de
+    entrada no funil. Um comentário antigo aqui dizia que filtrar por data
+    esconderia registros, porque `criado_em` seria nulo numa parte relevante
+    das oportunidades importadas do Pipefy; isso não vale mais para os dados
+    atuais (as oportunidades têm data, de 2019 em diante). Ainda assim, uma
+    linha sem data fica de fora de qualquer recorte — só aparece em "Tudo".
+
+    `clientes` é a única métrica imune ao recorte: `cliente` não tem coluna de
+    data, então o número é sempre o total da base. Ver a chave `recorte` na
+    resposta, que a tela usa para dizer isso na cara da pessoa.
     """
+    filtro_data = periodo.condicoes(Oportunidade.criado_em)
     # Funil — oportunidades abertas, agrupadas pela fase em que pararam.
     # Restrito às fases canônicas do funil comercial (ver _FUNIL_FASES_CANONICAS)
     # e sempre nessa ordem, com 0 explícito para fase sem oportunidade parada —
@@ -180,6 +189,7 @@ async def get_resumo_comercial(
         .where(
             Oportunidade.status_terminal == "ativo",
             Oportunidade.fase_atual_nome.in_(_FUNIL_FASES_CANONICAS),
+            *filtro_data,
         )
         .group_by(Oportunidade.fase_atual_nome)
     )
@@ -192,13 +202,14 @@ async def get_resumo_comercial(
     # Desfechos por status_terminal.
     status_rows = await db.execute(
         select(Oportunidade.status_terminal, func.count(Oportunidade.id))
+        .where(*filtro_data)
         .group_by(Oportunidade.status_terminal)
     )
     por_status = {s: c for s, c in status_rows}
 
     valor_ganho = (await db.execute(
         select(func.sum(Oportunidade.valor_fechado))
-        .where(Oportunidade.status_terminal == "fechado")
+        .where(Oportunidade.status_terminal == "fechado", *filtro_data)
     )).scalar() or 0
 
     # Origens e motivos de perda: a contagem sai das oportunidades, não das
@@ -217,6 +228,7 @@ async def get_resumo_comercial(
             func.count(Oportunidade.id),
         )
         .join(Oportunidade, Oportunidade.origem_id == DimLeadOrigem.id)
+        .where(*filtro_data)
         .group_by(func.coalesce(DimLeadOrigem.canonical_value, DimLeadOrigem.raw_value))
         .order_by(desc(func.count(Oportunidade.id)))
         .limit(8)
@@ -229,17 +241,23 @@ async def get_resumo_comercial(
             func.count(Oportunidade.id),
         )
         .join(Oportunidade, Oportunidade.motivo_perda_id == DimMotivoPerdida.id)
+        .where(*filtro_data)
         .group_by(func.coalesce(DimMotivoPerdida.canonical_value, DimMotivoPerdida.raw_value))
         .order_by(desc(func.count(Oportunidade.id)))
         .limit(15)
     )
     motivos = [{"label": nome or "Não informado", "value": total} for nome, total in motivo_rows]
 
+    # Sem recorte: `cliente` não tem coluna de data (ver docstring).
     total_clientes = (await db.execute(select(func.count(Cliente.id)))).scalar() or 0
     total_op = sum(por_status.values())
     fechadas = por_status.get("fechado", 0)
 
     return {
+        "recorte": {
+            "ativo": periodo.ativo,
+            "clientes_sem_recorte": periodo.ativo,
+        },
         "funil": funil,
         "desfechos": {
             "ganhos": fechadas,
@@ -265,14 +283,23 @@ async def get_resumo_comercial(
 async def get_tabela_oportunidades(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    periodo: Periodo = Depends(periodo_param),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
     """Como /oportunidades, mas com lead, origem, motivo e coordenação já
     resolvidos em nome — a tabela mostra texto, e resolver isso no cliente
     exigiria uma chamada por linha.
+
+    O mesmo recorte de /resumo se aplica aqui, e o `total` também é o do
+    recorte — se a contagem da paginação ignorasse o filtro, a tabela
+    anunciaria páginas que não existem.
     """
-    total = (await db.execute(select(func.count(Oportunidade.id)))).scalar() or 0
+    filtro_data = periodo.condicoes(Oportunidade.criado_em)
+
+    total = (await db.execute(
+        select(func.count(Oportunidade.id)).where(*filtro_data)
+    )).scalar() or 0
     total_pages = max(1, -(-total // page_size))
     skip = (page - 1) * page_size
 
@@ -297,6 +324,7 @@ async def get_tabela_oportunidades(
         .outerjoin(DimLeadOrigem, DimLeadOrigem.id == Oportunidade.origem_id)
         .outerjoin(Coordenacao, Coordenacao.id == Oportunidade.coordenacao_id)
         .outerjoin(DimMotivoPerdida, DimMotivoPerdida.id == Oportunidade.motivo_perda_id)
+        .where(*filtro_data)
         .order_by(desc(Oportunidade.id))
         .offset(skip)
         .limit(page_size)
