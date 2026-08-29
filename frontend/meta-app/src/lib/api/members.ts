@@ -9,18 +9,18 @@ export interface Member {
 }
 
 export async function fetchMembers(apenasAtivos: boolean = false): Promise<Member[]> {
-  return apiFetch<Member[]>(`/membros?apenas_ativos=${apenasAtivos}`);
+  return apiFetch<Member[]>(`/rh/membros?apenas_ativos=${apenasAtivos}`);
 }
 
 export async function updateMemberStatus(id: number, ativo: boolean, status_vinculo: string): Promise<Member> {
-  return apiFetch<Member>(`/membros/${id}/status`, {
+  return apiFetch<Member>(`/rh/membros/${id}/status`, {
     method: "PATCH",
     body: JSON.stringify({ ativo, status_vinculo }),
   });
 }
 
 export async function createMember(nome: string, email: string): Promise<Member> {
-  return apiFetch<Member>(`/membros`, {
+  return apiFetch<Member>(`/rh/membros`, {
     method: "POST",
     body: JSON.stringify({ nome, email }),
   });
