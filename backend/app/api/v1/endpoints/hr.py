@@ -30,7 +30,7 @@ from app.schemas.hr import (
     CelulaCreate, CelulaRead,
     CoordenacaoCreate, CoordenacaoRead,
     CargoCreate, CargoRead,
-    MembroRead, MembroCreate, MembroUpdate,
+    MembroRead, MembroListRead, MembroCreate, MembroUpdate, MembroStatusUpdate,
     MembroPerfilRead, MembroPerfilPublicRead, MembroPerfilUpdate,
     MembroCargoCreate, MembroCargoRead,
     MembroCelulaCreate, MembroCelulaRead,
@@ -145,7 +145,7 @@ async def update_perfil_membro(
 
 # ========== Membros ==========
 
-@router.get("/membros", response_model=List[MembroRead])
+@router.get("/membros", response_model=List[MembroListRead])
 async def list_membros(
     nome: Optional[str] = Query(None, description="Filtrar por nome (busca parcial)", max_length=100),
     apenas_ativos: bool = Query(True, description="Se True, retorna apenas membros ativos"),
@@ -157,15 +157,22 @@ async def list_membros(
     """Lista membros com filtro opcional por nome e status ativo.
     'ativo' é controlado pelo MetaApp (membro_perfil_metaapp), não pelo banco real.
     """
-    q = select(Membro)
+    q = select(Membro, MembroPerfilMetaapp.ativo, MembroPerfilMetaapp.status_vinculo).outerjoin(MembroPerfilMetaapp, MembroPerfilMetaapp.membro_id == Membro.id)
     if apenas_ativos:
-        q = q.outerjoin(MembroPerfilMetaapp, MembroPerfilMetaapp.membro_id == Membro.id).where(
-            (MembroPerfilMetaapp.ativo.is_(None)) | (MembroPerfilMetaapp.ativo == True)
-        )
+        q = q.where((MembroPerfilMetaapp.ativo.is_(None)) | (MembroPerfilMetaapp.ativo == True))
     if nome:
         q = q.where(Membro.nome.ilike(f"%{nome}%"))
     r = await db.execute(q.offset(skip).limit(limit))
-    return r.scalars().all()
+    return [
+        {
+            "id": m.id,
+            "nome": m.nome,
+            "email": m.email,
+            "ativo": ativo if ativo is not None else True,
+            "status_vinculo": status_vinculo if status_vinculo is not None else "ativo",
+        }
+        for m, ativo, status_vinculo in r
+    ]
 
 
 @router.get("/aniversariantes", summary="Aniversariantes do mês corrente")
@@ -289,6 +296,27 @@ async def update_membro(membro_id: int, body: MembroUpdate, db: AsyncSession = D
     await db.flush()
     await db.refresh(obj)
     return obj
+
+
+@router.patch("/membros/{membro_id}/status", response_model=MembroListRead)
+async def update_membro_status(membro_id: int, body: MembroStatusUpdate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
+    r = await db.execute(select(Membro).where(Membro.id == membro_id))
+    obj = r.scalar_one_or_none()
+    if not obj:
+        raise HTTPException(404, "Membro não encontrado")
+    
+    perfil = await _get_or_create_perfil(db, membro_id)
+    perfil.ativo = body.ativo
+    perfil.status_vinculo = body.status_vinculo
+    await db.flush()
+    
+    return {
+        "id": obj.id,
+        "nome": obj.nome,
+        "email": obj.email,
+        "ativo": perfil.ativo,
+        "status_vinculo": perfil.status_vinculo
+    }
 
 
 @router.delete("/membros/{membro_id}", status_code=204, summary="Desativar membro (soft-delete no MetaApp)")

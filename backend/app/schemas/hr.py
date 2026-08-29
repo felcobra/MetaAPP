@@ -114,6 +114,18 @@ class MembroRead(MembroBase):
     model_config = {"from_attributes": True}
 
 
+class MembroListRead(MembroRead):
+    ativo: bool | None = True
+    status_vinculo: str | None = "ativo"
+    model_config = {"from_attributes": True}
+
+
+class MembroStatusUpdate(BaseModel):
+    ativo: bool
+    status_vinculo: str
+
+
+
 # ---------- Perfil estendido (exclusivo do MetaApp) ----------
 
 class MembroPerfilBase(BaseModel):
