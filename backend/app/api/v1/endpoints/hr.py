@@ -27,11 +27,11 @@ from app.models.hr import (
     OrgDivisao, OrgNo, OrgNoMembro,
 )
 from app.schemas.hr import (
+    CargoCreate, CargoRead,
     CelulaCreate, CelulaRead,
     CoordenacaoCreate, CoordenacaoRead,
-    CargoCreate, CargoRead,
-    MembroRead, MembroListRead, MembroCreate, MembroUpdate, MembroStatusUpdate,
-    MembroPerfilRead, MembroPerfilPublicRead, MembroPerfilUpdate,
+    MembroCreate, MembroListRead, MembroRead, MembroUpdate,
+    MembroPerfilPublicRead, MembroPerfilRead, MembroPerfilUpdate, MembroStatusUpdate,
     MembroCargoCreate, MembroCargoRead,
     MembroCelulaCreate, MembroCelulaRead,
     MembroCoordenacaoCreate, MembroCoordenacaoRead,
@@ -144,6 +144,34 @@ async def update_perfil_membro(
 
 
 # ========== Membros ==========
+
+@router.post("/membros", response_model=MembroListRead)
+async def create_membro(
+    membro_in: MembroCreate,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_director_or_admin)
+):
+    q = select(Membro).where(Membro.email == membro_in.email)
+    r = await db.execute(q)
+    if r.scalar_one_or_none():
+        raise HTTPException(400, "Membro com este email já existe")
+
+    obj = Membro(nome=membro_in.nome, email=membro_in.email)
+    db.add(obj)
+    await db.flush()
+
+    perfil = MembroPerfilMetaapp(membro_id=obj.id, ativo=True, status_vinculo="ativo")
+    db.add(perfil)
+    await db.flush()
+
+    return {
+        "id": obj.id,
+        "nome": obj.nome,
+        "email": obj.email,
+        "ativo": True,
+        "status_vinculo": "ativo"
+    }
+
 
 @router.get("/membros", response_model=List[MembroListRead])
 async def list_membros(
