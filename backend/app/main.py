@@ -114,10 +114,23 @@ async def global_exception_handler(request: Request, exc: Exception):
         request.url.path,
         exc,
     )
-    return JSONResponse(
+    response = JSONResponse(
         status_code=500,
         content={"detail": "Erro interno do servidor. Tente novamente mais tarde."},
     )
+
+    # Handler de `Exception` roda no ServerErrorMiddleware, que fica FORA do
+    # CORSMiddleware — esta resposta não passa por ele. Sem os headers abaixo,
+    # o navegador não lê o corpo de um 500 e reporta "blocked by CORS policy /
+    # Failed to fetch", escondendo o erro real do servidor. Só devolvemos a
+    # origem quando ela já está na allowlist, então isso não afrouxa o CORS.
+    origem = request.headers.get("origin")
+    if origem and origem in settings.ALL_ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origem
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Vary"] = "Origin"
+
+    return response
 
 
 app.include_router(api_router, prefix=settings.API_V1_STR)

@@ -11,6 +11,17 @@
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
+/**
+ * Monta a URL absoluta de um caminho da API.
+ *
+ * Serve para o que o navegador busca sozinho, fora do apiFetch — o `src` de um
+ * <video> ou <img>, por exemplo, que não passa por fetch nem manda header
+ * Authorization (nesses casos o token vai na própria URL).
+ */
+export function apiUrl(path: string): string {
+  return `${API_BASE}${path}`;
+}
+
 // ── Chaves de storage ─────────────────────────────────────────────────────────
 const ACCESS_TOKEN_KEY = "meta_access_token";
 const REFRESH_TOKEN_KEY = "meta_refresh_token";
@@ -100,8 +111,12 @@ export async function apiFetch<T = unknown>(
   const callerHeaders = (options.headers ?? {}) as Record<string, string>;
   const headers: Record<string, string> = { ...callerHeaders };
 
-  // Define Content-Type padrão como JSON se não sobrescrito pelo caller
-  if (!headers["Content-Type"] && !headers["content-type"]) {
+  // Define Content-Type padrão como JSON se não sobrescrito pelo caller.
+  // Com FormData o header é omitido de propósito: quem monta o multipart (e o
+  // boundary) é o próprio navegador.
+  const isFormData =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (!isFormData && !headers["Content-Type"] && !headers["content-type"]) {
     headers["Content-Type"] = "application/json";
   }
   if (accessToken) {
@@ -156,4 +171,66 @@ export async function apiFetch<T = unknown>(
   if (response.status === 204) return undefined as T;
 
   return response.json() as Promise<T>;
+}
+
+// ── Upload com barra de progresso ────────────────────────────────────────────
+/**
+ * Envia um arquivo (multipart) acompanhando o progresso do upload.
+ *
+ * Usa XMLHttpRequest em vez de fetch porque só o XHR reporta quanto já subiu —
+ * e num vídeo de dezenas de MB, numa conexão de escritório, uma barra parada é
+ * indistinguível de um travamento. Repete a requisição uma vez se o token
+ * tiver expirado, igual ao apiFetch.
+ */
+export async function apiUpload<T = unknown>(
+  path: string,
+  formData: FormData,
+  onProgress?: (percentual: number) => void,
+): Promise<T> {
+  const enviar = (token: string | null): Promise<{ status: number; body: string }> =>
+    new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${API_BASE}${path}`);
+      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+      if (onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            onProgress(Math.round((e.loaded / e.total) * 100));
+          }
+        };
+      }
+
+      xhr.onload = () => resolve({ status: xhr.status, body: xhr.responseText });
+      xhr.onerror = () =>
+        reject(new Error("Falha de rede durante o envio. Verifique a conexão."));
+      xhr.onabort = () => reject(new Error("Envio cancelado."));
+      xhr.send(formData);
+    });
+
+  let resposta = await enviar(getAccessToken());
+
+  if (resposta.status === 401) {
+    const novoToken = await runRefresh();
+    if (!novoToken) {
+      if (typeof window !== "undefined") window.location.href = "/";
+      throw new Error("Sessão expirada. Faça login novamente.");
+    }
+    resposta = await enviar(novoToken);
+  }
+
+  if (resposta.status < 200 || resposta.status >= 300) {
+    let detalhe = `Erro ${resposta.status}`;
+    try {
+      detalhe = (JSON.parse(resposta.body) as { detail?: string }).detail ?? detalhe;
+    } catch {
+      // Resposta sem JSON (ex: 413 devolvido pelo proxy antes de chegar na API)
+      if (resposta.status === 413) {
+        detalhe = "Arquivo grande demais para o servidor aceitar.";
+      }
+    }
+    throw new Error(detalhe);
+  }
+
+  return (resposta.body ? JSON.parse(resposta.body) : undefined) as T;
 }

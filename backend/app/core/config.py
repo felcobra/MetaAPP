@@ -6,11 +6,17 @@ Segurança:
 - DB_USER "root" emite aviso em produção
 - DATABASE_URL construída como property (nunca hardcoded)
 """
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
 from pydantic import model_validator
 from typing import List
 from urllib.parse import quote_plus
 import warnings
+
+# Raiz do backend (pasta que contém `app/`) — usada para resolver caminhos
+# relativos sem depender de onde o uvicorn foi iniciado.
+RAIZ_BACKEND = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
@@ -56,6 +62,28 @@ class Settings(BaseSettings):
     # Base para montar o link do e-mail. Aponta para o FRONTEND, não para a API.
     FRONTEND_URL: str = "http://localhost:3000"
     RESET_TOKEN_EXPIRE_MINUTES: int = 30
+
+    # Uploads — arquivos enviados pela interface (hoje: vídeo da TV Meta).
+    # Precisa ser um diretório PERSISTENTE: em Docker/EasyPanel monte um volume
+    # nesse caminho, senão o vídeo some no próximo deploy.
+    UPLOAD_DIR: str = "uploads"
+
+    @property
+    def UPLOAD_PATH(self) -> Path:
+        """Pasta de uploads como caminho absoluto.
+
+        Um `UPLOAD_DIR` relativo é resolvido a partir da raiz do backend, e não
+        do diretório de trabalho: assim o arquivo vai parar no mesmo lugar
+        rodando `uvicorn` de dentro de `backend/` ou da raiz do repositório.
+        """
+        caminho = Path(self.UPLOAD_DIR).expanduser()
+        return caminho if caminho.is_absolute() else RAIZ_BACKEND / caminho
+    # Teto do upload do vídeo da TV Meta (MB). O proxy na frente da API também
+    # precisa aceitar esse tamanho (nginx: client_max_body_size).
+    TV_META_MAX_UPLOAD_MB: int = 500
+    # Validade do token que libera a leitura do vídeo (<video> não manda header
+    # Authorization, então o token vai na querystring do src).
+    MEDIA_TOKEN_EXPIRE_MINUTES: int = 720  # 12 horas
 
     # CORS
     ALLOWED_ORIGINS: List[str] = [

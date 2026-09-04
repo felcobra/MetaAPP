@@ -81,7 +81,7 @@ export function OrgChartContent() {
       ) : null}
 
       {!mostrarAdmin && !organogramaVazio ? (
-        <OrgChartExplorer divisions={divisoes} />
+        <OrgChartExplorer divisions={divisoes} podeEditar={podeEditar} />
       ) : null}
 
       {/* Painel de edição (admin) */}

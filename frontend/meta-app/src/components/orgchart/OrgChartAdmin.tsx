@@ -9,10 +9,19 @@ import {
   Loader2,
   FolderPlus,
   GitBranch,
+  GripVertical,
+  Info,
+  Check,
+  X,
+  AlertCircle,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
+import { useOrgChartEditor, type OrgNodeEdicao } from "@/lib/use-orgchart-editor";
+import { FORMATO_ORG_NO_API } from "@/lib/orgchart-tree";
+import { chaveDeArmazenamento } from "@/lib/orgchart-storage";
 import { NodeFormModal } from "./NodeFormModal";
 import type { OrgDivisaoApi, OrgNoApi } from "@/types/orgchart";
 
@@ -28,11 +37,14 @@ function AdminNoRow({
   divisaoId,
   depth,
   onRefresh,
+  propsDeArraste,
 }: {
   no: OrgNoApi;
   divisaoId: number;
   depth: number;
   onRefresh: () => void;
+  /** Props de arraste do nó — vem do hook e desce pela recursão. */
+  propsDeArraste: (id: string) => OrgNodeEdicao | undefined;
 }) {
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -56,12 +68,45 @@ function AdminNoRow({
     }
   }
 
+  const edicao = propsDeArraste(String(no.id));
+
   return (
     <>
       <div
-        className="group flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-50 transition-colors"
+        data-admin-row={no.titulo}
+        onDragOver={edicao?.onDragOver}
+        onDragLeave={edicao?.onDragLeave}
+        onDrop={edicao?.onDrop}
+        className={cn(
+          "group flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-slate-50",
+          // Linha em movimento: apagada, para o destaque ficar nos destinos.
+          edicao?.arrastando && "opacity-40",
+          // Destinos que aceitam o cargo: fundo levemente azulado.
+          edicao?.destinoPossivel && !edicao.destinoAtivo && "bg-blue-50/50",
+          // Destino sob o cursor: confirmação forte de onde o cargo vai cair.
+          edicao?.destinoAtivo && "bg-blue-100 ring-1 ring-blue-500 hover:bg-blue-100",
+          // Movimento proibido (ele mesmo, própria equipe, gestor atual).
+          edicao?.destinoInvalido && "bg-amber-50 ring-1 ring-amber-400 hover:bg-amber-50",
+        )}
         style={{ paddingLeft: `${8 + depth * 20}px` }}
       >
+        {/* Só a alça é arrastável: assim clicar nos botões de ação da linha
+            nunca é confundido com o começo de um arraste. */}
+        {edicao?.arrastavel ? (
+          <span
+            draggable
+            onDragStart={edicao.onDragStart}
+            onDragEnd={edicao.onDragEnd}
+            title="Arraste para mudar o gestor deste cargo"
+            className="shrink-0 cursor-grab text-slate-300 transition-colors hover:text-blue-500 active:cursor-grabbing"
+          >
+            <GripVertical className="h-3.5 w-3.5" />
+          </span>
+        ) : (
+          /* A raiz não tem gestor acima; o espaço mantém as linhas alinhadas. */
+          <span className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        )}
+
         {depth > 0 && (
           <ChevronRight className="h-3 w-3 shrink-0 text-slate-300" />
         )}
@@ -123,6 +168,7 @@ function AdminNoRow({
           divisaoId={divisaoId}
           depth={depth + 1}
           onRefresh={onRefresh}
+          propsDeArraste={propsDeArraste}
         />
       ))}
 
@@ -159,6 +205,113 @@ function AdminNoRow({
         />
       )}
     </>
+  );
+}
+
+// ── Hierarquia arrastável de uma divisão ───────────────────────────────────
+
+/**
+ * A lista de cargos da divisão selecionada, com arraste para trocar o gestor.
+ *
+ * Usa o MESMO hook do gráfico (`useOrgChartEditor`), só com outro formato de
+ * árvore — então as regras (não virar pai de si mesmo, não criar ciclo, não
+ * mover a raiz) e a chave de localStorage são as mesmas nas duas telas: o que
+ * você reorganiza aqui aparece no organograma visual também.
+ */
+function AdminHierarquia({
+  raiz,
+  divisaoId,
+  divisaoSlug,
+  label,
+  onRefresh,
+  onNovoRaiz,
+}: {
+  raiz: OrgNoApi;
+  divisaoId: number;
+  /** Slug da divisão — a chave de localStorage é por divisão. */
+  divisaoSlug: string;
+  label: string;
+  onRefresh: () => void;
+  onNovoRaiz: () => void;
+}) {
+  const editor = useOrgChartEditor(
+    raiz,
+    chaveDeArmazenamento(divisaoSlug),
+    FORMATO_ORG_NO_API,
+    // O painel já É a tela de edição, então o arraste fica sempre disponível.
+    { sempreEditando: true },
+  );
+
+  return (
+    <div className="space-y-0.5">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+          Hierarquia — {label}
+        </p>
+        <button
+          type="button"
+          onClick={onNovoRaiz}
+          className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 transition-colors"
+        >
+          <Plus className="h-3 w-3" />
+          Novo nó raiz
+        </button>
+      </div>
+
+      {/* Deixa explícito que reorganizar aqui não grava no banco — a API não
+          tem operação de mover nó, só criar, editar título/membro e remover. */}
+      <div className="mb-3 flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+        <p className="text-xs leading-relaxed text-slate-500">
+          Arraste um cargo pela alça e solte sobre o novo gestor para mudar a
+          hierarquia. Esta reorganização vale{" "}
+          <strong className="font-semibold text-slate-600">
+            somente neste navegador
+          </strong>{" "}
+          — o banco de dados não é alterado. Criar, editar ou remover um cargo,
+          sim, é salvo no banco e descarta a reorganização pendente.
+        </p>
+      </div>
+
+      {editor.aviso ? (
+        <p className="mb-2 flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {editor.aviso}
+        </p>
+      ) : null}
+
+      <AdminNoRow
+        no={editor.arvoreExibida}
+        divisaoId={divisaoId}
+        depth={0}
+        onRefresh={onRefresh}
+        propsDeArraste={editor.propsDeArraste}
+      />
+
+      {editor.temAlteracoes ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+          <Button
+            size="sm"
+            className="h-8 text-xs"
+            icon={<Check className="h-3.5 w-3.5" />}
+            iconPosition="left"
+            onClick={editor.salvar}
+          >
+            Salvar localmente
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 text-xs"
+            icon={<X className="h-3.5 w-3.5" />}
+            iconPosition="left"
+            onClick={editor.cancelar}
+          >
+            Descartar
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -383,25 +536,15 @@ export function OrgChartAdmin({ divisoes, onRefresh }: OrgChartAdminProps) {
           ) : (
             /* Divisão com árvore */
             <div className="space-y-0.5">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-                  Hierarquia — {divSelecionada.label}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setShowRootModal(true)}
-                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 transition-colors"
-                >
-                  <Plus className="h-3 w-3" />
-                  Novo nó raiz
-                </button>
-              </div>
-
-              <AdminNoRow
-                no={divSelecionada.root}
+              {/* key por divisão: cada área tem a sua própria reorganização. */}
+              <AdminHierarquia
+                key={divSelecionada.id}
+                raiz={divSelecionada.root}
                 divisaoId={divSelecionada.divisao_num_id}
-                depth={0}
+                divisaoSlug={divSelecionada.id}
+                label={divSelecionada.label}
                 onRefresh={onRefresh}
+                onNovoRaiz={() => setShowRootModal(true)}
               />
 
               {showRootModal && (

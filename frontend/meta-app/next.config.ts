@@ -12,6 +12,8 @@ import type { NextConfig } from "next";
  *   aceito aqui pois o risco maior é em script-src.
  * - `img-src`: permite imagens de HTTPS externo (fotos de perfil via URL) e
  *   data: para imagens base64 (ex: avatars gerados).
+ * - `media-src`: libera o vídeo da TV Meta, que é servido pela API (a tag
+ *   <video> aponta direto para o backend, não passa pelo Next).
  * - `connect-src`: permite chamadas à API em produção e localhost em dev.
  * - `frame-ancestors 'none'`: equivale a X-Frame-Options: DENY no nível CSP.
  * - `form-action 'self'`: impede submissão de formulários para origens externas.
@@ -37,6 +39,7 @@ const ContentSecurityPolicy = `
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   font-src 'self' https://fonts.gstatic.com;
   img-src 'self' data: https:;
+  media-src 'self' ${apiOrigin};
   connect-src 'self' ${apiOrigin} ws://localhost:* wss://localhost:*;
   frame-src 'none';
   frame-ancestors 'none';

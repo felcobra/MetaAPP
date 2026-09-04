@@ -57,5 +57,27 @@ def create_refresh_token(subject: Any) -> tuple[str, str]:
     return token, jti
 
 
+def create_media_token(subject: Any) -> str:
+    """Token de leitura de mídia (vídeo da TV Meta).
+
+    A tag <video> não envia o header Authorization, então o token precisa ir na
+    URL. Por isso ele é separado do access token: tipo próprio ("media"), sem
+    permissão de chamar a API, e com validade própria — se o link vazar, expõe
+    só o vídeo institucional e por tempo limitado.
+    """
+    # A expiração é arredondada para o fim de uma janela fixa (e não "agora +
+    # 12h"): assim o token — e portanto a URL do vídeo — não muda a cada
+    # request, e o navegador reaproveita o arquivo que já baixou em vez de
+    # puxar os megabytes de novo a cada visita à Home. Duas janelas de folga
+    # para o token nunca nascer perto de expirar.
+    janela = max(int(settings.MEDIA_TOKEN_EXPIRE_MINUTES) * 60, 60)
+    agora = int(datetime.now(timezone.utc).timestamp())
+    expire = datetime.fromtimestamp(
+        (agora // janela + 2) * janela, tz=timezone.utc
+    )
+    to_encode = {"exp": expire, "sub": str(subject), "type": "media"}
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
 def decode_token(token: str) -> dict:
     return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])

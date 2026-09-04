@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     dashboard,
     forms,
     portfolio,
+    tv_meta,
 )
 
 api_router = APIRouter()
@@ -24,3 +25,4 @@ api_router.include_router(hr.router,               prefix="/rh",              ta
 api_router.include_router(dashboard.router,        prefix="/dashboard",       tags=["Dashboard"])
 api_router.include_router(forms.router,            prefix="/formularios",     tags=["Formulários Dinâmicos"])
 api_router.include_router(portfolio.router,        prefix="/portfolio",       tags=["Portfólio de Serviços"])
+api_router.include_router(tv_meta.router,          prefix="/tv-meta",         tags=["TV Meta"])
