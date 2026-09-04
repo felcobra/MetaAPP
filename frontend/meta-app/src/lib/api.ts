@@ -162,9 +162,16 @@ export async function apiFetch<T = unknown>(
     const error = await response
       .json()
       .catch(() => ({ detail: response.statusText }));
-    throw new Error(
-      (error as { detail?: string }).detail ?? `Erro ${response.status}`,
-    );
+    const detail = (error as any)?.detail;
+    const message =
+      typeof detail === "string"
+        ? detail
+        : Array.isArray(detail)
+          ? detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ")
+          : detail
+            ? JSON.stringify(detail)
+            : `Erro ${response.status}`;
+    throw new Error(message);
   }
 
   // 204 No Content

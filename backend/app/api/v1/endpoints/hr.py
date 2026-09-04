@@ -178,7 +178,7 @@ async def list_membros(
     nome: Optional[str] = Query(None, description="Filtrar por nome (busca parcial)", max_length=100),
     apenas_ativos: bool = Query(True, description="Se True, retorna apenas membros ativos"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=200),
+    limit: Optional[int] = Query(None, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
@@ -190,14 +190,19 @@ async def list_membros(
         q = q.where((MembroPerfilMetaapp.ativo.is_(None)) | (MembroPerfilMetaapp.ativo == True))
     if nome:
         q = q.where(Membro.nome.ilike(f"%{nome}%"))
-    r = await db.execute(q.offset(skip).limit(limit))
+    q = q.order_by(Membro.nome.asc())
+    if limit is not None:
+        q = q.offset(skip).limit(limit)
+    elif skip:
+        q = q.offset(skip)
+    r = await db.execute(q)
     return [
         {
             "id": m.id,
             "nome": m.nome,
             "email": m.email,
             "ativo": ativo if ativo is not None else True,
-            "status_vinculo": status_vinculo if status_vinculo is not None else "ativo",
+            "status_vinculo": (status_vinculo or "ativo").strip().lower(),
         }
         for m, ativo, status_vinculo in r
     ]
@@ -304,13 +309,7 @@ async def get_membro_resumo(
     }
 
 
-@router.post("/membros", response_model=MembroRead, status_code=201)
-async def create_membro(body: MembroCreate, db: AsyncSession = Depends(get_db), _=Depends(require_director_or_admin)):
-    obj = Membro(**body.model_dump())
-    db.add(obj)
-    await db.flush()
-    await db.refresh(obj)
-    return obj
+
 
 
 @router.patch("/membros/{membro_id}", response_model=MembroRead)
